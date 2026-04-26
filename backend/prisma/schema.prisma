@@ -1,0 +1,128 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Lab {
+  id        String       @id @default(uuid())
+  name      String
+  is_active Boolean      @default(true)
+  contacts  LabContact[]
+  tests     Test[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model LabContact {
+  id           String   @id @default(uuid())
+  lab_id       String
+  lab          Lab      @relation(fields: [lab_id], references: [id])
+  contact_name String
+  email        String
+  is_primary   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id        String   @id @default(uuid())
+  name      String
+  lots      Lot[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Variant {
+  id        String   @id @default(uuid())
+  name      String
+  lots      Lot[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  lots      Lot[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TestType {
+  id               String   @id @default(uuid())
+  name             String
+  country_standard String?
+  tests            Test[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Lot {
+  id         String   @id @default(uuid())
+  lot_number String   @unique
+  product_id String
+  product    Product  @relation(fields: [product_id], references: [id])
+  variant_id String?
+  variant    Variant? @relation(fields: [variant_id], references: [id])
+  company_id String
+  company    Company  @relation(fields: [company_id], references: [id])
+  tests      Test[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+
+
+model Test {
+  id              String     @id @default(uuid())
+  lot_id          String
+  lot             Lot        @relation(fields: [lot_id], references: [id])
+  lab_id          String
+  lab             Lab        @relation(fields: [lab_id], references: [id])
+  test_type_id    String
+  test_type       TestType   @relation(fields: [test_type_id], references: [id])
+  status          String     @default("INITIATED")
+  email_thread_id String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  emails          Email[]
+}
+
+model Email {
+  id          String       @id @default(uuid())
+  message_id  String       @unique
+  thread_id   String?
+  subject     String?
+  body        String?
+  from_email  String
+  to_email    String?
+  direction   String       @default("RECEIVED")
+  received_at DateTime
+  test_id     String?
+  test        Test?        @relation(fields: [test_id], references: [id])
+  attachments Attachment[]
+  createdAt   DateTime     @default(now())
+}
+
+model Attachment {
+  id          String   @id @default(uuid())
+  email_id    String
+  email       Email    @relation(fields: [email_id], references: [id])
+  file_url    String   // Local path or S3 URL
+  file_type   String?
+  uploaded_at DateTime @default(now())
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
