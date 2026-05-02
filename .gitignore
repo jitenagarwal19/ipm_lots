@@ -2,7 +2,6 @@
 
 # Backend
 backend/node_modules/
-backend/dist/
 backend/backend-debug.log
 backend/.env
 backend/token.json
