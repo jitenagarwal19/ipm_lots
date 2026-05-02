@@ -1,11 +1,9 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
 import { serverLog } from '../lib/serverLog';
+import { db } from '../lib/db';
 
 dotenv.config();
-
-const prisma = new PrismaClient();
 const apiKey = process.env.OPENAI_API_KEY || process.env.OPEN_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 180_000);
@@ -154,7 +152,7 @@ export function buildAnalyzeLabReportPrompt(emailBody: string, attachmentText: s
   `;
 }
 
-function normalizeReports(parsed: any) {
+export function normalizeReports(parsed: any) {
   if (Array.isArray(parsed)) {
     return parsed;
   }
@@ -274,5 +272,5 @@ export async function analyzeLabReport(
   messageId: string,
   requestId?: string
 ) {
-  return analyzeLabReportWithClient(emailBody, attachmentText, messageId, openai, prisma, requestId);
+  return analyzeLabReportWithClient(emailBody, attachmentText, messageId, openai, db.prisma, requestId);
 }

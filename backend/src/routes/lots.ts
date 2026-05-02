@@ -1,10 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { db } from '../lib/db';
 
 const router = Router();
-const prisma = new PrismaClient();
 
-function parseJson(value: string | null) {
+export function parseJson(value: string | null) {
   if (!value) return null;
   try {
     return JSON.parse(value);
@@ -13,7 +12,7 @@ function parseJson(value: string | null) {
   }
 }
 
-function normalizeReports(parsed: any) {
+export function normalizeReports(parsed: any) {
   if (Array.isArray(parsed?.reports)) return parsed.reports;
   if (Array.isArray(parsed)) return parsed;
   if (parsed && typeof parsed === 'object' && ('lotNumber' in parsed || 'metadata' in parsed || 'moleculeResults' in parsed)) {
@@ -22,18 +21,18 @@ function normalizeReports(parsed: any) {
   return [];
 }
 
-function normalizeFilename(value?: string | null) {
+export function normalizeFilename(value?: string | null) {
   return (value || '').trim().toLowerCase();
 }
 
-function inferSourceType(report: any, attachment: any) {
+export function inferSourceType(report: any, attachment: any) {
   if (['EMAIL_BODY', 'ATTACHMENT', 'EMAIL_AND_ATTACHMENT'].includes(report?.sourceType)) {
     return report.sourceType;
   }
   return report?.sourceAttachmentFilename || attachment ? 'ATTACHMENT' : 'EMAIL_BODY';
 }
 
-function mapMoleculeResult(reportId: string, molecule: any) {
+export function mapMoleculeResult(reportId: string, molecule: any) {
   return {
     lab_report_id: reportId,
     molecule_name: String(molecule?.moleculeName || molecule?.name || 'Unknown molecule'),
@@ -53,7 +52,7 @@ function mapMoleculeResult(reportId: string, molecule: any) {
 }
 
 async function backfillReportsFromAiLogs(lotId: string) {
-  const tests = await prisma.test.findMany({
+  const tests = await db.prisma.test.findMany({
     where: { lot_id: lotId },
     include: {
       emails: {
@@ -71,7 +70,7 @@ async function backfillReportsFromAiLogs(lotId: string) {
         continue;
       }
 
-      const aiLog = await prisma.aILog.findFirst({
+      const aiLog = await db.prisma.aILog.findFirst({
         where: { message_id: email.message_id },
         orderBy: { createdAt: 'desc' },
       });
@@ -87,7 +86,7 @@ async function backfillReportsFromAiLogs(lotId: string) {
 
       for (const report of reports) {
         const sourceAttachment = attachmentsByName.get(normalizeFilename(report?.sourceAttachmentFilename)) || null;
-        const labReport = await prisma.labReport.create({
+        const labReport = await db.prisma.labReport.create({
           data: {
             email_id: email.id,
             test_id: test.id,
@@ -104,7 +103,7 @@ async function backfillReportsFromAiLogs(lotId: string) {
 
         const moleculeResults = Array.isArray(report?.moleculeResults) ? report.moleculeResults : [];
         if (moleculeResults.length > 0) {
-          await prisma.moleculeResult.createMany({
+          await db.prisma.moleculeResult.createMany({
             data: moleculeResults.map((molecule: any) => mapMoleculeResult(labReport.id, molecule)),
           });
         }
@@ -117,7 +116,7 @@ router.get('/:id', async (req, res) => {
   try {
     await backfillReportsFromAiLogs(req.params.id);
 
-    const lot = await prisma.lot.findUnique({
+    const lot = await db.prisma.lot.findUnique({
       where: { id: req.params.id },
       include: {
         product: true,

@@ -1,10 +1,8 @@
 import 'dotenv/config';
 import { Worker, Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { PrismaClient } from '@prisma/client';
 import { sendTestRequestEmail } from './services/email';
-
-const prisma = new PrismaClient();
+import { db } from './lib/db';
 
 // Initialize Redis connection for BullMQ
 const connection = new IORedis({
@@ -33,7 +31,7 @@ export const emailWorker = new Worker(
     if (job.name === 'send-test-email') {
       const { testId, lotNumber, labId } = job.data;
       
-      const lab = await prisma.lab.findUnique({ 
+      const lab = await db.prisma.lab.findUnique({ 
         where: { id: labId },
         include: { contacts: true }
       });
@@ -44,7 +42,7 @@ export const emailWorker = new Worker(
       const result = await sendTestRequestEmail(testId, lotNumber, lab.name, toEmail);
       
       // 2. Save Message/Thread ID for Zapier Webhook or manual polling
-      await prisma.test.update({
+      await db.prisma.test.update({
         where: { id: testId },
         data: { email_thread_id: result.threadId }
       });

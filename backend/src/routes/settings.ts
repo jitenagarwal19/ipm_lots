@@ -1,12 +1,11 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { db } from '../lib/db';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Labs
 router.get('/labs', async (req, res) => {
-  const labs = await prisma.lab.findMany({
+  const labs = await db.prisma.lab.findMany({
     include: { contacts: true },
   });
   res.json(labs);
@@ -28,7 +27,7 @@ router.post('/labs', async (req, res) => {
       is_primary: c.is_primary || false
     }));
 
-    const lab = await prisma.lab.create({
+    const lab = await db.prisma.lab.create({
       data: { 
         name, 
         is_active,
@@ -61,8 +60,8 @@ router.put('/labs/:id', async (req, res) => {
     }));
 
     // Delete old contacts and create new ones
-    await prisma.labContact.deleteMany({ where: { lab_id: id } });
-    const lab = await prisma.lab.update({
+    await db.prisma.labContact.deleteMany({ where: { lab_id: id } });
+    const lab = await db.prisma.lab.update({
       where: { id },
       data: {
         name,
@@ -80,63 +79,63 @@ router.put('/labs/:id', async (req, res) => {
 
 // Products
 router.get('/products', async (req, res) => {
-  const products = await prisma.product.findMany();
+  const products = await db.prisma.product.findMany();
   res.json(products);
 });
 router.post('/products', async (req, res) => {
-  const product = await prisma.product.create({ data: { name: req.body.name } });
+  const product = await db.prisma.product.create({ data: { name: req.body.name } });
   res.json(product);
 });
 router.put('/products/:id', async (req, res) => {
-  const product = await prisma.product.update({ where: { id: req.params.id }, data: { name: req.body.name } });
+  const product = await db.prisma.product.update({ where: { id: req.params.id }, data: { name: req.body.name } });
   res.json(product);
 });
 
 // Companies
 router.get('/companies', async (req, res) => {
-  const companies = await prisma.company.findMany();
+  const companies = await db.prisma.company.findMany();
   res.json(companies);
 });
 router.post('/companies', async (req, res) => {
-  const company = await prisma.company.create({ data: { name: req.body.name } });
+  const company = await db.prisma.company.create({ data: { name: req.body.name } });
   res.json(company);
 });
 router.put('/companies/:id', async (req, res) => {
-  const company = await prisma.company.update({ where: { id: req.params.id }, data: { name: req.body.name } });
+  const company = await db.prisma.company.update({ where: { id: req.params.id }, data: { name: req.body.name } });
   res.json(company);
 });
 
 // Test Types
 router.get('/test-types', async (req, res) => {
-  const testTypes = await prisma.testType.findMany();
+  const testTypes = await db.prisma.testType.findMany();
   res.json(testTypes);
 });
 router.post('/test-types', async (req, res) => {
-  const testType = await prisma.testType.create({ data: { name: req.body.name, country_standard: req.body.country_standard } });
+  const testType = await db.prisma.testType.create({ data: { name: req.body.name, country_standard: req.body.country_standard } });
   res.json(testType);
 });
 router.put('/test-types/:id', async (req, res) => {
-  const testType = await prisma.testType.update({ where: { id: req.params.id }, data: { name: req.body.name, country_standard: req.body.country_standard } });
+  const testType = await db.prisma.testType.update({ where: { id: req.params.id }, data: { name: req.body.name, country_standard: req.body.country_standard } });
   res.json(testType);
 });
 
 // Variants
 router.get('/variants', async (req, res) => {
-  const variants = await prisma.variant.findMany();
+  const variants = await db.prisma.variant.findMany();
   res.json(variants);
 });
 router.post('/variants', async (req, res) => {
-  const variant = await prisma.variant.create({ data: { name: req.body.name } });
+  const variant = await db.prisma.variant.create({ data: { name: req.body.name } });
   res.json(variant);
 });
 router.put('/variants/:id', async (req, res) => {
-  const variant = await prisma.variant.update({ where: { id: req.params.id }, data: { name: req.body.name } });
+  const variant = await db.prisma.variant.update({ where: { id: req.params.id }, data: { name: req.body.name } });
   res.json(variant);
 });
 
 // System Settings
 router.get('/system', async (req, res) => {
-  const settings = await prisma.systemSetting.findMany();
+  const settings = await db.prisma.systemSetting.findMany();
   const settingsMap = settings.reduce((acc: any, s) => {
     acc[s.key] = s.value;
     return acc;
@@ -148,7 +147,7 @@ router.put('/system/:key', async (req, res) => {
   const { key } = req.params;
   const { value } = req.body;
   try {
-    const setting = await prisma.systemSetting.upsert({
+    const setting = await db.prisma.systemSetting.upsert({
       where: { key },
       update: { value },
       create: { key, value }

@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { webhookSecretAuth } from '../middleware/webhookSecret';
 import { serverLog } from '../lib/serverLog';
+import { db } from '../lib/db';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(webhookSecretAuth);
 
@@ -19,12 +18,12 @@ router.post('/zapier', async (req, res) => {
 
     // Try to find the exact test if Zapier successfully extracted the ID from the email
     if (test_id) {
-      targetTest = await prisma.test.findUnique({ where: { id: test_id } });
+      targetTest = await db.prisma.test.findUnique({ where: { id: test_id } });
     }
     
     // Fallback: Find the most recent AWAITING_REPORT test for this lot number
     if (!targetTest && lot_number) {
-      const lot = await prisma.lot.findUnique({
+      const lot = await db.prisma.lot.findUnique({
         where: { lot_number },
         include: {
           tests: {
@@ -43,7 +42,7 @@ router.post('/zapier', async (req, res) => {
     }
 
     // Save the incoming email and attachment link to the database
-    const email = await prisma.email.create({
+    const email = await db.prisma.email.create({
       data: {
         message_id: message_id || `msg-${uuidv4()}`,
         thread_id: targetTest.email_thread_id,
@@ -60,7 +59,7 @@ router.post('/zapier', async (req, res) => {
     });
 
     // Automatically transition the Test state to REPORT_RECEIVED
-    const updatedTest = await prisma.test.update({
+    const updatedTest = await db.prisma.test.update({
       where: { id: targetTest.id },
       data: { status: 'REPORT_RECEIVED' }
     });

@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { serverLog } from '../lib/serverLog';
 import { processEmailLimiter } from '../middleware/rateLimits';
+import { db } from '../lib/db';
+import { getTrackedEmailsFromGmail, processTrackedEmail } from '../services/email';
 
 const router = Router();
-const prisma = new PrismaClient();
-import { getTrackedEmailsFromGmail, processTrackedEmail } from '../services/email';
 
 // Process a tracked email
 router.post('/process/:messageId', processEmailLimiter, async (req, res) => {
@@ -35,7 +34,7 @@ router.post('/process/:messageId', processEmailLimiter, async (req, res) => {
 // Get tracked emails from Gmail
 router.get('/tracked', async (req, res) => {
   try {
-    const setting = await prisma.systemSetting.findUnique({
+    const setting = await db.prisma.systemSetting.findUnique({
       where: { key: 'tracked_email_labels' }
     });
 
@@ -60,7 +59,7 @@ router.get('/tracked', async (req, res) => {
 // Get all email logs
 router.get('/', async (req, res) => {
   try {
-    const emails = await prisma.email.findMany({
+    const emails = await db.prisma.email.findMany({
       orderBy: {
         createdAt: 'desc'
       },

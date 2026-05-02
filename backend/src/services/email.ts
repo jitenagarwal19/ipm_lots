@@ -6,10 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { getTestRequestEmailTemplate } from '../templates/emailTemplates';
 const pdfParse = require('pdf-parse');
 import { analyzeLabReport } from './openai';
-import { PrismaClient } from '@prisma/client';
 import { serverLog } from '../lib/serverLog';
-
-const prisma = new PrismaClient();
+import { db } from '../lib/db';
 
 const TOKEN_PATH = path.join(__dirname, '../../token.json');
 const CREDENTIALS_PATH = path.join(__dirname, '../../credentials.json');
@@ -323,7 +321,7 @@ export async function getTrackedEmailsFromGmail(labels: string[]) {
     if (messages.length === 0) return [];
 
     const messageIds = messages.map(m => m.id).filter(Boolean) as string[];
-    const existingEmails = await prisma.email.findMany({
+    const existingEmails = await db.prisma.email.findMany({
       where: { message_id: { in: messageIds } },
       select: { message_id: true }
     });
@@ -397,7 +395,7 @@ export async function processTrackedEmail(
 
   // Check if it's already processed
   let stepStartedAt = Date.now();
-  const existing = await prisma.email.findUnique({
+  const existing = await db.prisma.email.findUnique({
     where: { message_id: messageId },
     include: {
       labReports: {
@@ -582,7 +580,7 @@ export async function processTrackedEmail(
 
     // Find the lot
     serverLog(`[trace=${trace}][PROCESS][${messageId}] map ${reportIndex}/${reports.length}: lookup lot_number=${report.lotNumber}`);
-    const lot = await prisma.lot.findUnique({
+    const lot = await db.prisma.lot.findUnique({
       where: { lot_number: report.lotNumber },
       include: { tests: { where: { status: 'AWAITING_REPORT' }, orderBy: { createdAt: 'desc' } } }
     });
@@ -591,7 +589,7 @@ export async function processTrackedEmail(
       const targetTest = lot.tests[0];
       matchedTestId = targetTest.id;
       // Update test status
-      await prisma.test.update({
+      await db.prisma.test.update({
         where: { id: targetTest.id },
         data: { status: 'UNDER_REVIEW' }
       });
@@ -634,7 +632,7 @@ export async function processTrackedEmail(
 
   // Create Email record
   stepStartedAt = Date.now();
-  const newEmail = await prisma.email.create({
+  const newEmail = await db.prisma.email.create({
     data: {
       message_id: messageId,
       thread_id: msg.data.threadId,
@@ -671,7 +669,7 @@ export async function processTrackedEmail(
       normalizeFilename(match.report?.sourceAttachmentFilename)
     ) || null;
 
-    const labReport = await prisma.labReport.create({
+    const labReport = await db.prisma.labReport.create({
       data: {
         email_id: newEmail.id,
         test_id: match.testId,
@@ -687,7 +685,7 @@ export async function processTrackedEmail(
     });
 
     if (moleculeResults.length > 0) {
-      await prisma.moleculeResult.createMany({
+      await db.prisma.moleculeResult.createMany({
         data: moleculeResults.map((molecule: any) => mapMoleculeResult(labReport.id, molecule)),
       });
       serverLog(`[trace=${trace}][PROCESS][${messageId}] save ${saveIndex}/${reportMatches.length}: inserted ${moleculeResults.length} MoleculeResult rows for labReport ${labReport.id}`);
@@ -726,3 +724,16 @@ export async function processTrackedEmail(
     processedLabelError,
   };
 }
+
+export {
+  decodeBase64Url,
+  getHeader,
+  normalizeFilename,
+  stringifyJson,
+  formatGmailLabelQuery,
+  inferReportSourceType,
+  mapMoleculeResult,
+  uploadFile,
+  getOrCreateGmailLabelId,
+  applyProcessedLabel,
+};

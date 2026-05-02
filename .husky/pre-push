@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT/backend"
+npm run test:coverage

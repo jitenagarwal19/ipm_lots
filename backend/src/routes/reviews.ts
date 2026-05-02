@@ -1,10 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { db } from '../lib/db';
 
 const router = Router();
-const prisma = new PrismaClient();
 
-function parseJsonField(value: string | null) {
+export function parseJsonField(value: string | null) {
   if (!value) return null;
   try {
     return JSON.parse(value);
@@ -13,7 +12,7 @@ function parseJsonField(value: string | null) {
   }
 }
 
-function serializeReport(report: any) {
+export function serializeReport(report: any) {
   return {
     ...report,
     metadata: parseJsonField(report.metadata_json),
@@ -25,7 +24,7 @@ function serializeReport(report: any) {
 router.get('/', async (req, res) => {
   try {
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-    const reports = await prisma.labReport.findMany({
+    const reports = await db.prisma.labReport.findMany({
       where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -50,7 +49,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const report = await prisma.labReport.findUnique({
+    const report = await db.prisma.labReport.findUnique({
       where: { id: req.params.id },
       include: {
         test: {
@@ -92,7 +91,7 @@ router.post('/:id/approve', async (req, res) => {
   try {
     const { notes } = req.body || {};
 
-    const report = await prisma.labReport.update({
+    const report = await db.prisma.labReport.update({
       where: { id: req.params.id },
       data: {
         status: 'APPROVED',
@@ -105,7 +104,7 @@ router.post('/:id/approve', async (req, res) => {
     });
 
     if (report.test_id) {
-      await prisma.test.update({
+      await db.prisma.test.update({
         where: { id: report.test_id },
         data: { status: 'COMPLETED' },
       });

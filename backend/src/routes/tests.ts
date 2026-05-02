@@ -1,14 +1,13 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { getTrackedEmailsFromGmail, processTrackedEmail, sendTestRequestEmail } from '../services/email';
+import { db } from '../lib/db';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Get all tests
 router.get('/', async (req, res) => {
   try {
-    const tests = await prisma.test.findMany({
+    const tests = await db.prisma.test.findMany({
       include: {
         lot: true,
         lab: true,
@@ -29,7 +28,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const test = await prisma.test.findUnique({
+    const test = await db.prisma.test.findUnique({
       where: { id: req.params.id },
       include: {
         lot: {
@@ -74,9 +73,9 @@ router.post('/', async (req, res) => {
 
   try {
     // Upsert the Lot
-    let lot = await prisma.lot.findUnique({ where: { lot_number } });
+    let lot = await db.prisma.lot.findUnique({ where: { lot_number } });
     if (!lot) {
-      lot = await prisma.lot.create({
+      lot = await db.prisma.lot.create({
         data: {
           lot_number,
           product_id,
@@ -87,7 +86,7 @@ router.post('/', async (req, res) => {
     }
 
     // Create Test
-    const test = await prisma.test.create({
+    const test = await db.prisma.test.create({
       data: {
         lot_id: lot.id,
         lab_id,
@@ -116,7 +115,7 @@ router.post('/', async (req, res) => {
       );
       
       // Update status and thread ID
-      const updatedTest = await prisma.test.update({
+      const updatedTest = await db.prisma.test.update({
         where: { id: test.id },
         data: { 
           status: 'AWAITING_REPORT',
@@ -125,7 +124,7 @@ router.post('/', async (req, res) => {
       });
 
       // Log the sent email
-      await prisma.email.create({
+      await db.prisma.email.create({
         data: {
           message_id: emailResult.messageId,
           thread_id: emailResult.threadId,
@@ -151,7 +150,7 @@ router.post('/', async (req, res) => {
 // Manually Fetch Emails for pending tests
 router.post('/fetch-emails', async (req, res) => {
   try {
-    const setting = await prisma.systemSetting.findUnique({
+    const setting = await db.prisma.systemSetting.findUnique({
       where: { key: 'tracked_email_labels' }
     });
 

@@ -1,13 +1,12 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { db } from '../lib/db';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Get all AI Logs
 router.get('/', async (req, res) => {
   try {
-    const logs = await prisma.aILog.findMany({
+    const logs = await db.prisma.aILog.findMany({
       orderBy: { createdAt: 'desc' }
     });
     res.json(logs);

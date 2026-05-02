@@ -306,4 +306,81 @@ describe('OpenAI lab report analysis', () => {
       /Unexpected token|not valid JSON/
     );
   });
+
+  it('propagates OpenAI client network failures', async () => {
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            throw new Error("network down");
+          },
+        },
+      },
+    };
+    const logRepository = {
+      aILog: {
+        create: async () => ({}),
+      },
+    };
+    await assert.rejects(
+      analyzeLabReportWithClient("Body", "PDF text", "gmail-net", client as any, logRepository as any),
+      /network down/
+    );
+  });
+
+  it('throws when OpenAI returns no message content', async () => {
+    const client = {
+      chat: {
+        completions: {
+          create: async () => ({
+            choices: [{ message: { content: null as unknown as string | null } }],
+          }),
+        },
+      },
+    };
+    const logRepository = {
+      aILog: {
+        create: async () => ({}),
+      },
+    };
+    await assert.rejects(
+      analyzeLabReportWithClient(
+        'Body',
+        'PDF text',
+        'gmail-empty-content',
+        client as any,
+        logRepository as any
+      ),
+      /No content received from OpenAI/
+    );
+  });
+
+  it('still parses OpenAI output when persisting the AI log fails', async () => {
+    const client = {
+      chat: {
+        completions: {
+          create: async () => ({
+            choices: [{ message: { content: '{"reports":[]}' } }],
+          }),
+        },
+      },
+    };
+    const logRepository = {
+      aILog: {
+        create: async () => {
+          throw new Error("persist failed");
+        },
+      },
+    };
+
+    const result = await analyzeLabReportWithClient(
+      "Body",
+      "PDF text",
+      "gmail-message-log-swallow",
+      client as any,
+      logRepository as any
+    );
+
+    assert.deepEqual(result, []);
+  });
 });
