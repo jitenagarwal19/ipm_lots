@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { serverLog } from '../lib/serverLog';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -7,12 +8,22 @@ import { getTrackedEmailsFromGmail, processTrackedEmail } from '../services/emai
 
 // Process a tracked email
 router.post('/process/:messageId', async (req, res) => {
+  const messageId = req.params.messageId;
+  const startedAt = Date.now();
+  const rid = req.requestId;
+  serverLog(`[API][${rid}] POST /emails/process/${messageId} handler entered`);
   try {
-    const result = await processTrackedEmail(req.params.messageId);
-    res.json(result);
+    const result = await processTrackedEmail(messageId, { requestId: rid });
+    serverLog(
+      `[API][${rid}] POST /emails/process/${messageId} ok in ${Date.now() - startedAt}ms status=${result.status} reports=${Array.isArray(result.analysis) ? result.analysis.length : 0}`
+    );
+    res.json({ requestId: rid, ...result });
   } catch (error: any) {
-    console.error("Error processing email:", error);
-    res.status(500).json({ error: error.message });
+    serverLog(
+      `[API][${rid}] POST /emails/process/${messageId} failed after ${Date.now() - startedAt}ms: %s`,
+      error?.message || error
+    );
+    res.status(500).json({ requestId: rid, error: error.message });
   }
 });
 
@@ -49,6 +60,7 @@ router.get('/', async (req, res) => {
         createdAt: 'desc'
       },
       include: {
+        attachments: true,
         test: {
           include: {
             lot: true,

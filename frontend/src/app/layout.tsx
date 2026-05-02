@@ -37,11 +37,17 @@ export default function RootLayout({
             <Link href="/mapping" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
               Email Mapping
             </Link>
+            <Link href="/reviews" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
+              Report Review
+            </Link>
             <Link href="/email-logs" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
               Email Logs
             </Link>
             <Link href="/tracked-emails" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
               Tracked Inbox
+            </Link>
+            <Link href="/ai-logs" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
+              AI Logs
             </Link>
             <Link href="/settings" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
               Settings

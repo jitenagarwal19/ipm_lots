@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Lab {
@@ -93,6 +93,7 @@ model Test {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   emails          Email[]
+  labReports      LabReport[]
 }
 
 model Email {
@@ -108,6 +109,7 @@ model Email {
   test_id     String?
   test        Test?        @relation(fields: [test_id], references: [id])
   attachments Attachment[]
+  labReports  LabReport[]
   createdAt   DateTime     @default(now())
 }
 
@@ -115,9 +117,54 @@ model Attachment {
   id          String   @id @default(uuid())
   email_id    String
   email       Email    @relation(fields: [email_id], references: [id])
+  original_filename String?
   file_url    String   // Local path or S3 URL
   file_type   String?
+  extracted_text String?
+  labReports LabReport[]
   uploaded_at DateTime @default(now())
+}
+
+model LabReport {
+  id                         String           @id @default(uuid())
+  email_id                   String
+  email                      Email            @relation(fields: [email_id], references: [id])
+  test_id                    String?
+  test                       Test?            @relation(fields: [test_id], references: [id])
+  attachment_id              String?
+  attachment                 Attachment?      @relation(fields: [attachment_id], references: [id])
+  lot_number                 String?
+  source_type                String           @default("UNKNOWN")
+  source_attachment_filename String?
+  status                     String           @default("PENDING_REVIEW")
+  metadata_json              String?
+  results_json               String?
+  raw_ai_json                String
+  review_notes               String?
+  reviewed_at                DateTime?
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
+  moleculeResults            MoleculeResult[]
+}
+
+model MoleculeResult {
+  id                      String    @id @default(uuid())
+  lab_report_id           String
+  labReport               LabReport @relation(fields: [lab_report_id], references: [id])
+  molecule_name           String
+  cas_number              String?
+  result                  String?
+  numeric_result          Float?
+  unit                    String?
+  reporting_limit         String?
+  method_detection_limit  String?
+  specification_limit     String?
+  method                  String?
+  status                  String?
+  is_detected             Boolean?
+  is_compliant            Boolean?
+  notes                   String?
+  createdAt               DateTime  @default(now())
 }
 
 model SystemSetting {
@@ -125,4 +172,12 @@ model SystemSetting {
   value     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model AILog {
+  id                String   @id @default(uuid())
+  message_id        String?
+  prompt_sent       String
+  response_received String
+  createdAt         DateTime @default(now())
 }

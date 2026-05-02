@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getApiBaseUrl } from "@/lib/utils";
 
-const API_BASE_URL = 'http://localhost:4000/api/settings';
+const API_BASE_URL = `${getApiBaseUrl()}/settings`;
 
 export default function SettingsPage() {
   const [labs, setLabs] = useState<any[]>([]);

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
+import { getApiBaseUrl } from "@/lib/utils";
 
 export default function CreateTestPage() {
   const router = useRouter();
@@ -26,13 +27,13 @@ export default function CreateTestPage() {
   const [selectedTestType, setSelectedTestType] = useState<string>("");
 
   useEffect(() => {
-    const API_BASE = 'http://localhost:4000/api/settings';
+    const apiBaseUrl = getApiBaseUrl();
     Promise.all([
-      fetch(`${API_BASE}/products`).then(r => r.json()),
-      fetch(`${API_BASE}/variants`).then(r => r.json()),
-      fetch(`${API_BASE}/companies`).then(r => r.json()),
-      fetch(`${API_BASE}/labs`).then(r => r.json()),
-      fetch(`${API_BASE}/test-types`).then(r => r.json())
+      fetch(`${apiBaseUrl}/settings/products`).then(r => r.json()),
+      fetch(`${apiBaseUrl}/settings/variants`).then(r => r.json()),
+      fetch(`${apiBaseUrl}/settings/companies`).then(r => r.json()),
+      fetch(`${apiBaseUrl}/settings/labs`).then(r => r.json()),
+      fetch(`${apiBaseUrl}/settings/test-types`).then(r => r.json())
     ]).then(([p, v, c, l, t]) => {
       setProducts(p); setVariants(v); setCompanies(c); setLabs(l); setTestTypes(t);
     }).catch(e => console.error(e));
@@ -43,7 +44,7 @@ export default function CreateTestPage() {
     setIsSubmitting(true);
     
     try {
-      const res = await fetch('http://localhost:4000/api/tests', {
+      const res = await fetch(`${getApiBaseUrl()}/tests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

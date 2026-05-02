@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Worker, Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
@@ -32,16 +33,20 @@ export const emailWorker = new Worker(
     if (job.name === 'send-test-email') {
       const { testId, lotNumber, labId } = job.data;
       
-      const lab = await prisma.lab.findUnique({ where: { id: labId } });
+      const lab = await prisma.lab.findUnique({ 
+        where: { id: labId },
+        include: { contacts: true }
+      });
       if (!lab) throw new Error('Lab not found');
 
       // 1. Dispatch Email (via Gmail API or Mock)
-      const threadId = await sendTestRequestEmail(testId, lotNumber, lab.name);
+      const toEmail = lab.contacts && lab.contacts.length > 0 ? lab.contacts[0].email : 'default@example.com';
+      const result = await sendTestRequestEmail(testId, lotNumber, lab.name, toEmail);
       
       // 2. Save Message/Thread ID for Zapier Webhook or manual polling
       await prisma.test.update({
         where: { id: testId },
-        data: { email_thread_id: threadId }
+        data: { email_thread_id: result.threadId }
       });
       
     }

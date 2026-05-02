@@ -7,16 +7,45 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
+import { getApiBaseUrl } from "@/lib/utils";
+
+type TestRow = {
+  id: string;
+  lot_id: string;
+  status: string;
+  createdAt: string;
+  lot?: {
+    lot_number?: string | null;
+  } | null;
+  test_type?: {
+    name?: string | null;
+  } | null;
+  lab?: {
+    name?: string | null;
+  } | null;
+  labReports?: {
+    id: string;
+    status: string;
+  }[];
+};
+
+type FetchEmailsResponse = {
+  error?: string;
+  processedCount?: number;
+  mappedCount?: number;
+  skippedCount?: number;
+  errorCount?: number;
+};
 
 export default function TestsPage() {
-  const [tests, setTests] = useState<any[]>([]);
+  const [tests, setTests] = useState<TestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFetchingEmails, setIsFetchingEmails] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState<string | null>(null);
 
   const loadTests = async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/tests');
+      const res = await fetch(`${getApiBaseUrl()}/tests`);
       if (res.ok) {
         const data = await res.json();
         setTests(data);
@@ -29,7 +58,9 @@ export default function TestsPage() {
   };
 
   useEffect(() => {
-    loadTests();
+    // Fetching initial API state on mount is intentional for this page.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadTests();
     const storedFetchTime = localStorage.getItem("lastEmailFetchTime");
     if (storedFetchTime) {
       setLastFetchTime(storedFetchTime);
@@ -39,23 +70,25 @@ export default function TestsPage() {
   const handleFetchEmails = async () => {
     setIsFetchingEmails(true);
     try {
-      const res = await fetch('http://localhost:4000/api/tests/fetch-emails', {
+      const res = await fetch(`${getApiBaseUrl()}/tests/fetch-emails`, {
         method: 'POST'
       });
+      const data: FetchEmailsResponse = await res.json();
       if (res.ok) {
-        const data = await res.json();
         const now = new Date().toISOString();
         setLastFetchTime(now);
         localStorage.setItem("lastEmailFetchTime", now);
         
-        if (data.processedCount > 0) {
-          alert(`Success: Fetched and processed ${data.processedCount} new lab reports!`);
+        const processedCount = data.processedCount || 0;
+        const skippedCount = data.skippedCount || 0;
+        if (processedCount > 0) {
+          alert(`Fetched ${processedCount} new report email${processedCount === 1 ? '' : 's'}.\nMapped to tests: ${data.mappedCount || 0}\nSkipped: ${skippedCount}${data.errorCount ? `\nErrors: ${data.errorCount}` : ''}`);
           await loadTests(); // Reload to show updated statuses
         } else {
-          alert("No new lab reports found.");
+          alert(`No new lab reports found.${skippedCount ? `\nSkipped: ${skippedCount}` : ''}`);
         }
       } else {
-        alert("Failed to fetch emails.");
+        alert(data.error || "Failed to fetch emails.");
       }
     } catch (e) {
       console.error("Failed to fetch emails:", e);
@@ -70,6 +103,7 @@ export default function TestsPage() {
       case 'INITIATED': return 'bg-zinc-500/10 text-zinc-400';
       case 'AWAITING_REPORT': return 'bg-blue-500/10 text-blue-400';
       case 'REPORT_RECEIVED': return 'bg-purple-500/10 text-purple-400';
+      case 'UNDER_REVIEW': return 'bg-amber-500/10 text-amber-400';
       case 'COMPLETED': return 'bg-emerald-500/10 text-emerald-400';
       default: return 'bg-zinc-500/10 text-zinc-400';
     }
@@ -120,17 +154,18 @@ export default function TestsPage() {
                 <TableHead className="text-zinc-400">Test Type</TableHead>
                 <TableHead className="text-zinc-400">Lab</TableHead>
                 <TableHead className="text-zinc-400">Status</TableHead>
+                <TableHead className="text-zinc-400">Review</TableHead>
                 <TableHead className="text-zinc-400 text-right">Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-zinc-500 py-8">Loading tests...</TableCell>
+                  <TableCell colSpan={6} className="text-center text-zinc-500 py-8">Loading tests...</TableCell>
                 </TableRow>
               ) : tests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-zinc-500 py-8">No tests initiated yet.</TableCell>
+                  <TableCell colSpan={6} className="text-center text-zinc-500 py-8">No tests initiated yet.</TableCell>
                 </TableRow>
               ) : (
                 tests.map((test) => (
@@ -140,12 +175,25 @@ export default function TestsPage() {
                         {test.lot?.lot_number || "Unknown"}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-zinc-200">{test.test_type?.name || "Unknown"}</TableCell>
+                    <TableCell className="text-zinc-200">
+                      <Link href={`/tests/${test.id}`} className="hover:text-emerald-400 hover:underline">
+                        {test.test_type?.name || "Unknown"}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-zinc-400">{test.lab?.name || "Unknown"}</TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(test.status)}`}>
                         {test.status}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-zinc-300">
+                      {test.labReports?.[0] ? (
+                        <Link href={`/reviews/${test.labReports[0].id}`} className="text-amber-400 hover:underline text-sm">
+                          Review report
+                        </Link>
+                      ) : (
+                        <span className="text-zinc-600">-</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right text-zinc-400">
                       {new Date(test.createdAt).toLocaleDateString()}

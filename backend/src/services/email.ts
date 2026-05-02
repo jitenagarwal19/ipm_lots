@@ -1,16 +1,170 @@
 import fs from 'fs';
 import path from 'path';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { google } from 'googleapis';
 import { v4 as uuidv4 } from 'uuid';
 import { getTestRequestEmailTemplate } from '../templates/emailTemplates';
-import pdfParse from 'pdf-parse';
+const pdfParse = require('pdf-parse');
 import { analyzeLabReport } from './openai';
 import { PrismaClient } from '@prisma/client';
+import { serverLog } from '../lib/serverLog';
 
 const prisma = new PrismaClient();
 
 const TOKEN_PATH = path.join(__dirname, '../../token.json');
 const CREDENTIALS_PATH = path.join(__dirname, '../../credentials.json');
+const UPLOADS_PATH = path.join(process.cwd(), 'uploads');
+const TRACKED_EMAIL_LIMIT = Number(process.env.TRACKED_EMAIL_LIMIT || 10);
+const PROCESSED_GMAIL_LABEL = process.env.PROCESSED_GMAIL_LABEL || 'processed';
+const OPENAI_MAX_ATTACHMENT_CHARS = Number(process.env.OPENAI_MAX_ATTACHMENT_CHARS || 45_000);
+
+const STORAGE_MODE = process.env.STORAGE_MODE || 'local';
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+  }
+});
+
+async function uploadFile(filename: string, buffer: Buffer, mimeType: string): Promise<string> {
+  if (STORAGE_MODE === 's3' && process.env.AWS_S3_BUCKET_NAME) {
+    const command = new PutObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET_NAME,
+      Key: filename,
+      Body: buffer,
+      ContentType: mimeType,
+    });
+    await s3Client.send(command);
+    // Returning a format that can be used directly or parsed by the frontend
+    return `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${filename}`;
+  } else {
+    fs.mkdirSync(UPLOADS_PATH, { recursive: true });
+    const filepath = path.join(UPLOADS_PATH, filename);
+    fs.writeFileSync(filepath, buffer);
+    return `/uploads/${filename}`;
+  }
+}
+
+type SavedAttachmentInput = {
+  original_filename: string;
+  file_url: string;
+  file_type: string;
+  extracted_text: string | null;
+};
+
+function decodeBase64Url(data: string) {
+  return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+}
+
+function getHeader(headers: any[], name: string) {
+  return headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+}
+
+function normalizeFilename(value?: string | null) {
+  return (value || '').trim().toLowerCase();
+}
+
+function stringifyJson(value: unknown) {
+  return JSON.stringify(value ?? null);
+}
+
+function formatGmailLabelQuery(label: string) {
+  const trimmed = label.trim();
+  if (/[\s"]/g.test(trimmed)) {
+    return `label:"${trimmed.replace(/"/g, '\\"')}"`;
+  }
+  return `label:${trimmed}`;
+}
+
+function inferReportSourceType(report: any, attachment: { extracted_text?: string | null } | null) {
+  if (['EMAIL_BODY', 'ATTACHMENT', 'EMAIL_AND_ATTACHMENT'].includes(report?.sourceType)) {
+    return report.sourceType;
+  }
+
+  const hasAttachmentSource = Boolean(report?.sourceAttachmentFilename || attachment?.extracted_text);
+  const hasEmailBodySource = !hasAttachmentSource || Boolean(report?.sourceIncludesEmailBody);
+
+  if (hasAttachmentSource && hasEmailBodySource) return 'EMAIL_AND_ATTACHMENT';
+  if (hasAttachmentSource) return 'ATTACHMENT';
+  return 'EMAIL_BODY';
+}
+
+function mapMoleculeResult(reportId: string, molecule: any) {
+  return {
+    lab_report_id: reportId,
+    molecule_name: String(molecule?.moleculeName || molecule?.name || 'Unknown molecule'),
+    cas_number: molecule?.casNumber ?? null,
+    result: molecule?.result ?? null,
+    numeric_result: typeof molecule?.numericResult === 'number' ? molecule.numericResult : null,
+    unit: molecule?.unit ?? null,
+    reporting_limit: molecule?.reportingLimit ?? null,
+    method_detection_limit: molecule?.methodDetectionLimit ?? null,
+    specification_limit: molecule?.specificationLimit ?? null,
+    method: molecule?.method ?? null,
+    status: molecule?.status ?? null,
+    is_detected: typeof molecule?.isDetected === 'boolean' ? molecule.isDetected : null,
+    is_compliant: typeof molecule?.isCompliant === 'boolean' ? molecule.isCompliant : null,
+    notes: molecule?.notes ?? null,
+  };
+}
+
+async function getOrCreateGmailLabelId(gmail: any, labelName: string) {
+  const labelsResponse = await gmail.users.labels.list({ userId: 'me' });
+  const existingLabel = (labelsResponse.data.labels || []).find(
+    (label: any) => label.name?.toLowerCase() === labelName.toLowerCase()
+  );
+
+  if (existingLabel?.id) {
+    return existingLabel.id;
+  }
+
+  const createdLabel = await gmail.users.labels.create({
+    userId: 'me',
+    requestBody: {
+      name: labelName,
+      labelListVisibility: 'labelShow',
+      messageListVisibility: 'show',
+    },
+  });
+
+  return createdLabel.data.id;
+}
+
+async function applyProcessedLabel(gmail: any, messageId: string) {
+  const labelId = await getOrCreateGmailLabelId(gmail, PROCESSED_GMAIL_LABEL);
+  if (!labelId) {
+    throw new Error(`Could not create or find Gmail label "${PROCESSED_GMAIL_LABEL}".`);
+  }
+
+  await gmail.users.messages.modify({
+    userId: 'me',
+    id: messageId,
+    requestBody: {
+      addLabelIds: [labelId],
+    },
+  });
+}
+
+type PdfParser = (buffer: Buffer) => Promise<{ text?: string }>;
+
+export async function extractPdfText(
+  filename: string,
+  buffer: Buffer,
+  parser: PdfParser = pdfParse
+) {
+  if (!filename.toLowerCase().endsWith('.pdf')) {
+    return '';
+  }
+
+  try {
+    const pdfData = await parser(buffer);
+    return `${pdfData.text || ''}\n`;
+  } catch (e) {
+    serverLog("Failed to parse PDF:", e);
+    return '';
+  }
+}
 
 // Initialize the Gmail API Client
 function getGmailClient() {
@@ -69,7 +223,7 @@ export async function sendTestRequestEmail(testId: string, lotNumber: string, la
       },
     });
 
-    console.log(`[GMAIL SERVICE] Email sent successfully. Thread ID: ${res.data.threadId}`);
+    serverLog(`[GMAIL SERVICE] Email sent successfully. Thread ID: ${res.data.threadId}`);
     return {
       threadId: res.data.threadId as string,
       messageId: res.data.id as string,
@@ -79,7 +233,7 @@ export async function sendTestRequestEmail(testId: string, lotNumber: string, la
     };
     
   } catch (error) {
-    console.error("[GMAIL SERVICE] Failed to send email:", error);
+    serverLog("[GMAIL SERVICE] Failed to send email:", error);
     throw error;
   }
 }
@@ -117,7 +271,7 @@ export async function pollForReplies(threadId: string) {
       }
       
       if (attachmentId) {
-        console.log(`[GMAIL SERVICE] Found PDF reply for thread ${threadId}! Extracting...`);
+        serverLog(`[GMAIL SERVICE] Found PDF reply for thread ${threadId}! Extracting...`);
         // We're not downloading it to disk just yet in this simplified MVP, just logging the URL reference
         return {
           hasReply: true,
@@ -132,7 +286,7 @@ export async function pollForReplies(threadId: string) {
     
     return { hasReply: false };
   } catch (error) {
-    console.error(`[GMAIL SERVICE] Error polling thread ${threadId}:`, error);
+    serverLog(`[GMAIL SERVICE] Error polling thread ${threadId}:`, error);
     return { hasReply: false };
   }
 }
@@ -147,74 +301,158 @@ export async function getTrackedEmailsFromGmail(labels: string[]) {
     return [];
   }
 
-  // Construct query like: "label:INBOX OR label:IPM_Report"
-  const query = labels.map(l => `label:${l}`).join(' OR ');
+  // Construct query like: "(label:INBOX OR label:IPM_Report) -label:processed"
+  const trackedLabelQuery = labels.map(formatGmailLabelQuery).join(' OR ');
+  const query = `(${trackedLabelQuery}) -${formatGmailLabelQuery(PROCESSED_GMAIL_LABEL)}`;
+  const startedAt = Date.now();
+  serverLog("[GMAIL SERVICE] Fetching tracked emails", {
+    labels,
+    query,
+    limit: TRACKED_EMAIL_LIMIT,
+  });
 
   try {
     const res = await gmail.users.messages.list({
       userId: 'me',
       q: query,
-      maxResults: 50, // Limit to recent 50
+      maxResults: TRACKED_EMAIL_LIMIT,
+      fields: 'messages(id,threadId),resultSizeEstimate',
     });
 
     const messages = res.data.messages || [];
     if (messages.length === 0) return [];
 
-    const detailedMessages = [];
-    // Fetch details for each message
-    for (const msg of messages) {
-      if (!msg.id) continue;
+    const messageIds = messages.map(m => m.id).filter(Boolean) as string[];
+    const existingEmails = await prisma.email.findMany({
+      where: { message_id: { in: messageIds } },
+      select: { message_id: true }
+    });
+    const processedIds = new Set(existingEmails.map(e => e.message_id));
+
+    const messagesWithIds = messages.filter((msg): msg is { id: string; threadId?: string | null } => Boolean(msg.id));
+    const detailedMessages = await Promise.all(messagesWithIds.map(async (msg) => {
       
       const details = await gmail.users.messages.get({
         userId: 'me',
         id: msg.id,
-        format: 'metadata',
-        metadataHeaders: ['Subject', 'From', 'Date']
+        format: 'full',
+        fields: 'id,threadId,snippet,payload(headers,parts)',
       });
 
-      const headers = details.data.payload?.headers || [];
-      const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
-      const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
-      const date = headers.find(h => h.name === 'Date')?.value || '';
+      const payload = details.data.payload;
+      const headers = payload?.headers || [];
+      const subject = getHeader(headers, 'Subject') || 'No Subject';
+      const from = getHeader(headers, 'From') || 'Unknown';
+      const date = getHeader(headers, 'Date');
 
-      detailedMessages.push({
+      let attachments: { filename: string }[] = [];
+      function parsePartsForMetadata(parts: any[]) {
+        for (const part of parts) {
+          if (part.filename && part.body?.attachmentId) {
+            attachments.push({ filename: part.filename });
+          }
+          if (part.parts) {
+            parsePartsForMetadata(part.parts);
+          }
+        }
+      }
+
+      if (payload?.parts) {
+        parsePartsForMetadata(payload.parts);
+      }
+
+      return {
         id: msg.id,
         threadId: msg.threadId,
         snippet: details.data.snippet,
         subject,
         from,
         date,
-      });
-    }
+        attachments,
+        isProcessed: processedIds.has(msg.id)
+      };
+    }));
+
+    serverLog("[GMAIL SERVICE] Fetched tracked emails", {
+      count: detailedMessages.length,
+      durationMs: Date.now() - startedAt,
+    });
 
     return detailedMessages;
   } catch (error) {
-    console.error("[GMAIL SERVICE] Error fetching tracked emails:", error);
+    serverLog("[GMAIL SERVICE] Error fetching tracked emails:", error);
     throw error;
   }
 }
 
-export async function processTrackedEmail(messageId: string) {
+export async function processTrackedEmail(
+  messageId: string,
+  opts?: { requestId?: string }
+) {
+  const trace = opts?.requestId ?? "—";
+  const processStartedAt = Date.now();
+  const timings: Record<string, number> = {};
   const gmail = getGmailClient();
   if (!gmail) throw new Error("Gmail client not configured.");
 
   // Check if it's already processed
-  const existing = await prisma.email.findUnique({ where: { message_id: messageId } });
+  let stepStartedAt = Date.now();
+  const existing = await prisma.email.findUnique({
+    where: { message_id: messageId },
+    include: {
+      labReports: {
+        select: { id: true, test_id: true },
+      },
+    },
+  });
+  timings.existingCheckMs = Date.now() - stepStartedAt;
   if (existing) {
-    return { email: existing, status: existing.test_id ? "ALREADY MAPPED" : "ALREADY PROCESSED (UNMAPPED)", analysis: null };
+    timings.totalMs = Date.now() - processStartedAt;
+    let processedLabelApplied = false;
+    let processedLabelError = null;
+
+    try {
+      await applyProcessedLabel(gmail, messageId);
+      processedLabelApplied = true;
+    } catch (error: any) {
+      processedLabelError = error.message || 'Failed to apply processed Gmail label.';
+      serverLog(`[trace=${trace}][GMAIL SERVICE][${messageId}] Failed to apply processed label to already processed email`, error);
+    }
+
+    return {
+      email: existing,
+      status:
+        existing.test_id || existing.labReports.some(r => Boolean(r.test_id))
+          ? "ALREADY MAPPED"
+          : "ALREADY PROCESSED (UNMAPPED)",
+      analysis: null,
+      timings,
+      processedLabelApplied,
+      processedLabelError,
+    };
   }
 
+  stepStartedAt = Date.now();
   const msg = await gmail.users.messages.get({
     userId: 'me',
     id: messageId,
     format: 'full'
   });
+  timings.gmailMessageFetchMs = Date.now() - stepStartedAt;
 
+  stepStartedAt = Date.now();
   const payload = msg.data.payload;
   const headers = payload?.headers || [];
-  const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
-  const fromEmail = headers.find(h => h.name === 'From')?.value || 'Unknown';
-  const dateStr = headers.find(h => h.name === 'Date')?.value || '';
+  const subject = getHeader(headers, 'Subject') || 'No Subject';
+  const fromEmail = getHeader(headers, 'From') || 'Unknown';
+  const dateStr = getHeader(headers, 'Date');
+
+  serverLog(`[trace=${trace}][GMAIL SERVICE][${messageId}] Processing tracked email`, {
+    threadId: msg.data.threadId,
+    subject,
+    fromEmail,
+    date: dateStr || null,
+  });
 
   let bodyText = '';
   let attachmentIds: { id: string, filename: string }[] = [];
@@ -222,7 +460,7 @@ export async function processTrackedEmail(messageId: string) {
   function parseParts(parts: any[]) {
     for (const part of parts) {
       if (part.mimeType === 'text/plain' && part.body?.data) {
-        bodyText += Buffer.from(part.body.data, 'base64').toString('utf8') + '\n';
+        bodyText += decodeBase64Url(part.body.data).toString('utf8') + '\n';
       } else if (part.filename && part.body?.attachmentId) {
         attachmentIds.push({ id: part.body.attachmentId, filename: part.filename });
       }
@@ -235,13 +473,21 @@ export async function processTrackedEmail(messageId: string) {
   if (payload?.parts) {
     parseParts(payload.parts);
   } else if (payload?.body?.data) {
-    bodyText = Buffer.from(payload.body.data, 'base64').toString('utf8');
+    bodyText = decodeBase64Url(payload.body.data).toString('utf8');
   }
+  timings.payloadParseMs = Date.now() - stepStartedAt;
 
-  let fullPdfText = '';
-  const savedAttachments = [];
+  serverLog(`[trace=${trace}][GMAIL SERVICE][${messageId}] Parsed email payload`, {
+    bodyChars: bodyText.length,
+    attachmentCount: attachmentIds.length,
+    attachmentFilenames: attachmentIds.map(att => att.filename),
+  });
+
+  const pdfTextSections: string[] = [];
+  const savedAttachments: SavedAttachmentInput[] = [];
 
   // Download and parse attachments
+  stepStartedAt = Date.now();
   for (const att of attachmentIds) {
     const attRes = await gmail.users.messages.attachments.get({
       userId: 'me',
@@ -250,49 +496,133 @@ export async function processTrackedEmail(messageId: string) {
     });
     
     if (attRes.data.data) {
-      const buffer = Buffer.from(attRes.data.data, 'base64');
+      const buffer = decodeBase64Url(attRes.data.data);
       const filename = `${uuidv4()}_${att.filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const filepath = path.join(__dirname, '../../uploads', filename);
-      fs.writeFileSync(filepath, buffer);
+      const mimeType = att.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
+      const fileUrl = await uploadFile(filename, buffer, mimeType);
+
+      serverLog(`[trace=${trace}][GMAIL SERVICE][${messageId}] Saved attachment to ${STORAGE_MODE}`, {
+        originalFilename: att.filename,
+        savedFilename: filename,
+        bytes: buffer.length,
+        url: fileUrl,
+      });
+      const extractedText = await extractPdfText(att.filename, buffer);
       savedAttachments.push({
-        file_url: `/uploads/${filename}`,
-        file_type: att.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'unknown'
+        original_filename: att.filename,
+        file_url: fileUrl,
+        file_type: mimeType,
+        extracted_text: extractedText.trim() || null,
       });
 
-      if (att.filename.toLowerCase().endsWith('.pdf')) {
-        try {
-          const pdfData = await pdfParse(buffer);
-          fullPdfText += pdfData.text + '\n';
-        } catch (e) {
-          console.error("Failed to parse PDF:", e);
-        }
+      if (extractedText.trim()) {
+        pdfTextSections.push([
+          `--- Attachment: ${att.filename} ---`,
+          extractedText.trim(),
+          `--- End Attachment: ${att.filename} ---`,
+        ].join('\n'));
       }
     }
   }
+  timings.attachmentProcessingMs = Date.now() - stepStartedAt;
 
   // OpenAI Analysis
-  const analysis = await analyzeLabReport(bodyText, fullPdfText);
-  let testId = null;
+  const fullPdfTextRaw = pdfTextSections.join('\n\n');
+  const fullPdfText =
+    fullPdfTextRaw.length > OPENAI_MAX_ATTACHMENT_CHARS
+      ? `${fullPdfTextRaw.slice(0, OPENAI_MAX_ATTACHMENT_CHARS)}\n\n[TRUNCATED attachment text: ${fullPdfTextRaw.length - OPENAI_MAX_ATTACHMENT_CHARS} chars removed]`
+      : fullPdfTextRaw;
+  serverLog(`[trace=${trace}][PROCESS][${messageId}] attachments done in ${timings.attachmentProcessingMs}ms`, {
+    bodyChars: bodyText.length,
+    pdfTextChars: fullPdfText.length,
+    pdfTextCharsRaw: fullPdfTextRaw.length,
+    savedAttachmentCount: savedAttachments.length,
+    pdfReportSectionCount: pdfTextSections.length,
+  });
+  if (fullPdfTextRaw.length !== fullPdfText.length) {
+    serverLog(
+      `[trace=${trace}][PROCESS][${messageId}] attachment text truncated for OpenAI: raw=${fullPdfTextRaw.length} sent=${fullPdfText.length}`
+    );
+  }
+  serverLog(
+    `[trace=${trace}][PROCESS][${messageId}] OpenAI: starting (large PDFs / many analytes can take 1–5+ minutes; UI progress bar is only a rough timer)`
+  );
+  stepStartedAt = Date.now();
+  const analysis = await analyzeLabReport(bodyText, fullPdfText, messageId, trace);
+  timings.openAiMs = Date.now() - stepStartedAt;
+  const reports = Array.isArray(analysis) ? analysis : [];
+  serverLog(`[trace=${trace}][PROCESS][${messageId}] OpenAI: finished in ${timings.openAiMs}ms`, {
+    reportCount: reports.length,
+    lotNumbers: reports.map((report: any) => report?.lotNumber ?? null),
+  });
   let statusStr = "UNMAPPED";
+  const mappedReports: { lotNumber: string; testId: string; reportId: string | null }[] = [];
+  const reportMatches: {
+    report: any;
+    testId: string | null;
+    lotNumber: string | null;
+    reportId: string | null;
+  }[] = [];
 
-  if (analysis.lotNumber) {
+  stepStartedAt = Date.now();
+  let reportIndex = 0;
+  for (const report of reports) {
+    reportIndex += 1;
+    let matchedTestId = null;
+    if (!report?.lotNumber) {
+      serverLog(`[trace=${trace}][PROCESS][${messageId}] map ${reportIndex}/${reports.length}: no lotNumber in AI output, skipping DB lookup`);
+      reportMatches.push({
+        report,
+        testId: null,
+        lotNumber: null,
+        reportId: report?.metadata?.reportId ?? null,
+      });
+      continue;
+    }
+
     // Find the lot
+    serverLog(`[trace=${trace}][PROCESS][${messageId}] map ${reportIndex}/${reports.length}: lookup lot_number=${report.lotNumber}`);
     const lot = await prisma.lot.findUnique({
-      where: { lot_number: analysis.lotNumber },
+      where: { lot_number: report.lotNumber },
       include: { tests: { where: { status: 'AWAITING_REPORT' }, orderBy: { createdAt: 'desc' } } }
     });
 
     if (lot && lot.tests.length > 0) {
       const targetTest = lot.tests[0];
-      testId = targetTest.id;
+      matchedTestId = targetTest.id;
       // Update test status
       await prisma.test.update({
-        where: { id: testId },
-        data: { status: 'PENDING_REVIEW' }
+        where: { id: targetTest.id },
+        data: { status: 'UNDER_REVIEW' }
       });
-      statusStr = `MAPPED to Lot ${analysis.lotNumber}`;
+      mappedReports.push({
+        lotNumber: report.lotNumber,
+        testId: targetTest.id,
+        reportId: report?.metadata?.reportId ?? null,
+      });
+      serverLog(`[trace=${trace}][PROCESS][${messageId}] map ${reportIndex}/${reports.length}: matched test ${targetTest.id} for lot ${report.lotNumber}`);
+    } else {
+      serverLog(`[trace=${trace}][PROCESS][${messageId}] map ${reportIndex}/${reports.length}: no AWAITING_REPORT test for lot ${report.lotNumber} (lot exists: ${Boolean(lot)})`);
     }
+
+    reportMatches.push({
+      report,
+      testId: matchedTestId,
+      lotNumber: report.lotNumber ?? null,
+      reportId: report?.metadata?.reportId ?? null,
+    });
   }
+  timings.mappingMs = Date.now() - stepStartedAt;
+  serverLog(`[trace=${trace}][PROCESS][${messageId}] mapping phase done in ${timings.mappingMs}ms (${reports.length} AI reports)`);
+
+  if (mappedReports.length > 0) {
+    statusStr = `MAPPED ${mappedReports.length} report${mappedReports.length === 1 ? '' : 's'}`;
+  }
+
+  // If the email maps to multiple tests (e.g. 2 attachments / 2 lots),
+  // we keep Email.test_id null and rely on LabReport.test_id per report.
+  const uniqueMappedTestIds = Array.from(new Set(mappedReports.map(r => r.testId)));
+  const emailTestId = uniqueMappedTestIds.length === 1 ? uniqueMappedTestIds[0] : null;
 
   let receivedAt = new Date();
   if (dateStr) {
@@ -303,6 +633,7 @@ export async function processTrackedEmail(messageId: string) {
   }
 
   // Create Email record
+  stepStartedAt = Date.now();
   const newEmail = await prisma.email.create({
     data: {
       message_id: messageId,
@@ -312,12 +643,86 @@ export async function processTrackedEmail(messageId: string) {
       from_email: fromEmail,
       direction: 'RECEIVED',
       received_at: receivedAt,
-      test_id: testId,
+      test_id: emailTestId,
       attachments: {
         create: savedAttachments
       }
+    },
+    include: {
+      attachments: true
+    },
+  });
+  timings.emailSaveMs = Date.now() - stepStartedAt;
+  serverLog(`[trace=${trace}][PROCESS][${messageId}] saved Email row in ${timings.emailSaveMs}ms id=${newEmail.id}`);
+
+  const attachmentsByOriginalName = new Map(
+    newEmail.attachments.map(attachment => [normalizeFilename(attachment.original_filename), attachment])
+  );
+
+  stepStartedAt = Date.now();
+  let saveIndex = 0;
+  for (const match of reportMatches) {
+    saveIndex += 1;
+    const moleculeResults = Array.isArray(match.report?.moleculeResults)
+      ? match.report.moleculeResults
+      : [];
+    serverLog(`[trace=${trace}][PROCESS][${messageId}] save ${saveIndex}/${reportMatches.length}: LabReport lot=${match.lotNumber ?? '—'} testId=${match.testId ?? '—'} molecules=${moleculeResults.length}`);
+    const sourceAttachment = attachmentsByOriginalName.get(
+      normalizeFilename(match.report?.sourceAttachmentFilename)
+    ) || null;
+
+    const labReport = await prisma.labReport.create({
+      data: {
+        email_id: newEmail.id,
+        test_id: match.testId,
+        attachment_id: sourceAttachment?.id ?? null,
+        lot_number: match.lotNumber,
+        source_type: inferReportSourceType(match.report, sourceAttachment),
+        source_attachment_filename: match.report?.sourceAttachmentFilename ?? sourceAttachment?.original_filename ?? null,
+        status: match.testId ? 'PENDING_REVIEW' : 'UNMAPPED',
+        metadata_json: stringifyJson(match.report?.metadata ?? null),
+        results_json: stringifyJson(match.report?.results ?? null),
+        raw_ai_json: stringifyJson(match.report),
+      },
+    });
+
+    if (moleculeResults.length > 0) {
+      await prisma.moleculeResult.createMany({
+        data: moleculeResults.map((molecule: any) => mapMoleculeResult(labReport.id, molecule)),
+      });
+      serverLog(`[trace=${trace}][PROCESS][${messageId}] save ${saveIndex}/${reportMatches.length}: inserted ${moleculeResults.length} MoleculeResult rows for labReport ${labReport.id}`);
     }
+  }
+  timings.reportSaveMs = Date.now() - stepStartedAt;
+  serverLog(`[trace=${trace}][PROCESS][${messageId}] report save phase done in ${timings.reportSaveMs}ms`);
+
+  let processedLabelApplied = false;
+  let processedLabelError = null;
+
+  stepStartedAt = Date.now();
+  try {
+    await applyProcessedLabel(gmail, messageId);
+    processedLabelApplied = true;
+  } catch (error: any) {
+    processedLabelError = error.message || 'Failed to apply processed Gmail label.';
+    serverLog(`[trace=${trace}][GMAIL SERVICE][${messageId}] Failed to apply processed label`, error);
+  }
+  timings.processedLabelMs = Date.now() - stepStartedAt;
+  timings.totalMs = Date.now() - processStartedAt;
+
+  serverLog(`[trace=${trace}][GMAIL SERVICE][${messageId}] Processing timing breakdown`, {
+    ...timings,
+    processedLabelApplied,
+    processedLabelError,
   });
 
-  return { email: newEmail, status: statusStr, analysis };
+  return {
+    email: newEmail,
+    status: statusStr,
+    analysis: reports,
+    mappedReports,
+    timings,
+    processedLabelApplied,
+    processedLabelError,
+  };
 }

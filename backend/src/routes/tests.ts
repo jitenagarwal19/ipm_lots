@@ -1,16 +1,71 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { pollForReplies, sendTestRequestEmail } from '../services/email';
+import { getTrackedEmailsFromGmail, processTrackedEmail, sendTestRequestEmail } from '../services/email';
 
 const router = Router();
 const prisma = new PrismaClient();
 
 // Get all tests
 router.get('/', async (req, res) => {
-  const tests = await prisma.test.findMany({
-    include: { lot: true, lab: true, test_type: true },
-  });
-  res.json(tests);
+  try {
+    const tests = await prisma.test.findMany({
+      include: {
+        lot: true,
+        lab: true,
+        test_type: true,
+        labReports: {
+          where: { status: 'PENDING_REVIEW' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    res.json(tests);
+  } catch (error: any) {
+    console.error("Error fetching tests:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  try {
+    const test = await prisma.test.findUnique({
+      where: { id: req.params.id },
+      include: {
+        lot: {
+          include: {
+            product: true,
+            variant: true,
+            company: true,
+          },
+        },
+        lab: true,
+        test_type: true,
+        emails: {
+          orderBy: { received_at: 'desc' },
+          include: {
+            attachments: true,
+          },
+        },
+        labReports: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            attachment: true,
+            moleculeResults: true,
+          },
+        },
+      },
+    });
+
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found.' });
+    }
+
+    res.json(test);
+  } catch (error: any) {
+    console.error("Error fetching test:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Create Test (and Lot if needed)
@@ -96,42 +151,63 @@ router.post('/', async (req, res) => {
 // Manually Fetch Emails for pending tests
 router.post('/fetch-emails', async (req, res) => {
   try {
-    const pendingTests = await prisma.test.findMany({
-      where: { status: 'AWAITING_REPORT', email_thread_id: { not: null } }
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: 'tracked_email_labels' }
     });
-    
+
+    if (!setting?.value) {
+      return res.status(400).json({
+        error: "No tracked email labels configured. Add Gmail labels in Settings before fetching emails."
+      });
+    }
+
+    const labels = setting.value.split(',').map((label: string) => label.trim()).filter(Boolean);
+    if (labels.length === 0) {
+      return res.status(400).json({
+        error: "No tracked email labels configured. Add Gmail labels in Settings before fetching emails."
+      });
+    }
+
+    const trackedEmails = await getTrackedEmailsFromGmail(labels);
     let processedCount = 0;
-    for (const test of pendingTests) {
-      if (!test.email_thread_id) continue;
-      
-      const result = await pollForReplies(test.email_thread_id);
-      
-      if (result.hasReply && result.attachment) {
-        await prisma.email.create({
-          data: {
-            message_id: `msg-${Math.random().toString(36).substring(7)}`,
-            thread_id: test.email_thread_id,
-            from_email: 'lab-response@mock.com', 
-            received_at: result.attachment.receivedAt || new Date(),
-            test_id: test.id,
-            attachments: {
-              create: {
-                file_url: result.attachment.url,
-                file_type: 'application/pdf'
-              }
-            }
-          }
-        });
-        
-        await prisma.test.update({
-          where: { id: test.id },
-          data: { status: 'REPORT_RECEIVED' }
-        });
+    let mappedCount = 0;
+    let skippedCount = 0;
+    const errors: { messageId: string; error: string }[] = [];
+
+    for (const email of trackedEmails) {
+      if (email.isProcessed) {
+        skippedCount++;
+        continue;
+      }
+
+      if (!email.attachments || email.attachments.length === 0) {
+        skippedCount++;
+        continue;
+      }
+
+      try {
+        const result = await processTrackedEmail(email.id, { requestId: req.requestId });
         processedCount++;
+        if (result.email?.test_id) {
+          mappedCount++;
+        }
+      } catch (error: any) {
+        errors.push({
+          messageId: email.id,
+          error: error.message || "Unknown error"
+        });
       }
     }
     
-    res.json({ success: true, processedCount, lastFetchTime: new Date().toISOString() });
+    res.json({
+      success: errors.length === 0,
+      processedCount,
+      mappedCount,
+      skippedCount,
+      errorCount: errors.length,
+      errors,
+      lastFetchTime: new Date().toISOString()
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

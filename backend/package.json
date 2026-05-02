@@ -5,13 +5,17 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc"
+    "dev:log": "BACKEND_LOG_FILE=./backend-debug.log tsx watch src/index.ts",
+    "build": "tsc",
+    "gmail:auth": "tsx scripts/gmail-auth.ts",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1037.0",
     "@prisma/client": "^5.22.0",
     "@types/uuid": "^10.0.0",
     "bullmq": "^5.76.2",
@@ -23,7 +27,7 @@
     "multer": "^2.1.1",
     "nodemailer": "^8.0.6",
     "openai": "^6.34.0",
-    "pdf-parse": "^2.4.5",
+    "pdf-parse": "^1.1.1",
     "uuid": "^14.0.0"
   },
   "devDependencies": {

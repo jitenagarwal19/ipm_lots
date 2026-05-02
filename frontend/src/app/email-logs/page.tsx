@@ -5,22 +5,46 @@ import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { getApiBaseUrl } from "@/lib/utils";
 
 export default function EmailLogsPage() {
   const [emails, setEmails] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("http://localhost:4000/api/emails")
-      .then(res => res.json())
-      .then(data => {
-        setEmails(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to fetch emails:", err);
-        setLoading(false);
-      });
+    const url = `${getApiBaseUrl()}/emails`;
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`Request failed (${res.status}). ${text}`.trim());
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setEmails(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        if (cancelled) return;
+        const msg =
+          e?.name === "TypeError"
+            ? `Could not reach backend at ${url}. Is the backend running?`
+            : e?.message || "Failed to load email logs.";
+        setError(msg);
+        setEmails([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -36,6 +60,11 @@ export default function EmailLogsPage() {
           <CardDescription className="text-zinc-400">Chronological log of all emails dispatched and received by the system.</CardDescription>
         </CardHeader>
         <CardContent>
+          {error ? (
+            <div className="rounded-md border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-200">
+              {error}
+            </div>
+          ) : null}
           <div className="rounded-md border border-zinc-800">
             <Table>
               <TableHeader>

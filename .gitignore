@@ -1,1 +1,14 @@
 .DS_Store
+
+# Backend
+backend/node_modules/
+backend/dist/
+backend/backend-debug.log
+backend/.env
+backend/token.json
+backend/credentials.json
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+
