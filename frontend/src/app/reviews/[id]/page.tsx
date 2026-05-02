@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getApiBaseUrl, getUploadBaseUrl } from "@/lib/utils";
 
 type MoleculeResult = {
   id: string;
@@ -61,15 +62,6 @@ type ReviewReport = {
   attachment?: Attachment | null;
   moleculeResults?: MoleculeResult[];
 };
-
-function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:4000/api`;
-}
-
-function getUploadBaseUrl() {
-  if (typeof window === "undefined") return process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-  return process.env.NEXT_PUBLIC_BACKEND_URL || `http://${window.location.hostname}:4000`;
-}
 
 function formatValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "-";

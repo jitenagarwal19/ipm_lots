@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
+import { webhookSecretAuth } from '../middleware/webhookSecret';
+import { serverLog } from '../lib/serverLog';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+router.use(webhookSecretAuth);
 
 // Zapier Webhook Endpoint for Incoming Lab Reports
 // Expected Payload: { test_id, lot_number, from_email, attachment_url, message_id }
@@ -61,11 +65,11 @@ router.post('/zapier', async (req, res) => {
       data: { status: 'REPORT_RECEIVED' }
     });
 
-    console.log(`[WEBHOOK] Processed incoming Zapier report. Test ${targetTest.id} transitioned to REPORT_RECEIVED.`);
+    serverLog(`[WEBHOOK] Processed incoming Zapier report. Test ${targetTest.id} transitioned to REPORT_RECEIVED.`);
     res.json({ success: true, test: updatedTest });
 
   } catch (error: any) {
-    console.error("[WEBHOOK] Error processing Zapier payload:", error);
+    serverLog('[WEBHOOK] Error processing Zapier payload: %s', error?.message || error);
     res.status(500).json({ error: error.message });
   }
 });

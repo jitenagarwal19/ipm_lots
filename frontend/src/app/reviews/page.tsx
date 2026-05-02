@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { getApiBaseUrl } from "@/lib/utils";
 
 type ReviewReport = {
   id: string;
@@ -25,10 +26,6 @@ type ReviewReport = {
   } | null;
   moleculeResults?: unknown[];
 };
-
-function getApiBaseUrl() {
-  return `http://${window.location.hostname}:4000/api`;
-}
 
 export default function ReviewsPage() {
   const [reports, setReports] = useState<ReviewReport[]>([]);

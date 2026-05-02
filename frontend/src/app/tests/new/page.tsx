@@ -106,7 +106,11 @@ export default function CreateTestPage() {
               {/* Product */}
               <div className="space-y-2">
                 <Label className="text-zinc-200">Product <span className="text-red-500">*</span></Label>
-                <Select value={selectedProduct} onValueChange={setSelectedProduct} required>
+                <Select
+                  value={selectedProduct}
+                  onValueChange={(v) => setSelectedProduct(v == null ? "" : String(v))}
+                  required
+                >
                   <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-100 focus:ring-emerald-500">
                     <SelectValue placeholder="Select Product">
                       {selectedProduct ? products.find(p => p.id === selectedProduct)?.name : "Select Product"}
@@ -123,7 +127,10 @@ export default function CreateTestPage() {
               {/* Variant */}
               <div className="space-y-2">
                 <Label htmlFor="variant" className="text-zinc-200">Variant (Optional)</Label>
-                <Select value={selectedVariant} onValueChange={setSelectedVariant}>
+                <Select
+                  value={selectedVariant}
+                  onValueChange={(v) => setSelectedVariant(v == null ? "" : String(v))}
+                >
                   <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-100 focus:ring-emerald-500">
                     <SelectValue placeholder="Select Variant">
                       {selectedVariant && selectedVariant !== "none" ? variants.find(v => v.id === selectedVariant)?.name : "None"}
@@ -141,7 +148,11 @@ export default function CreateTestPage() {
               {/* Company */}
               <div className="space-y-2">
                 <Label className="text-zinc-200">Company (Exporter) <span className="text-red-500">*</span></Label>
-                <Select value={selectedCompany} onValueChange={setSelectedCompany} required>
+                <Select
+                  value={selectedCompany}
+                  onValueChange={(v) => setSelectedCompany(v == null ? "" : String(v))}
+                  required
+                >
                   <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-100 focus:ring-emerald-500">
                     <SelectValue placeholder="Select Exporter">
                       {selectedCompany ? companies.find(c => c.id === selectedCompany)?.name : "Select Exporter"}
@@ -160,7 +171,11 @@ export default function CreateTestPage() {
               {/* Lab */}
               <div className="space-y-2">
                 <Label className="text-zinc-200">Laboratory <span className="text-red-500">*</span></Label>
-                <Select value={selectedLab} onValueChange={setSelectedLab} required>
+                <Select
+                  value={selectedLab}
+                  onValueChange={(v) => setSelectedLab(v == null ? "" : String(v))}
+                  required
+                >
                   <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-100 focus:ring-emerald-500">
                     <SelectValue placeholder="Select Lab">
                       {selectedLab ? labs.find(l => l.id === selectedLab)?.name : "Select Lab"}
@@ -177,7 +192,11 @@ export default function CreateTestPage() {
               {/* Test Type */}
               <div className="space-y-2">
                 <Label className="text-zinc-200">Test Type <span className="text-red-500">*</span></Label>
-                <Select value={selectedTestType} onValueChange={setSelectedTestType} required>
+                <Select
+                  value={selectedTestType}
+                  onValueChange={(v) => setSelectedTestType(v == null ? "" : String(v))}
+                  required
+                >
                   <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-100 focus:ring-emerald-500">
                     <SelectValue placeholder="Select Test Type">
                       {selectedTestType ? testTypes.find(t => t.id === selectedTestType)?.name : "Select Test Type"}

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getApiBaseUrl } from "@/lib/utils";
 
 type Attachment = {
   id: string;
@@ -60,10 +61,6 @@ type TestDetail = {
   emails?: Email[];
   labReports?: LabReport[];
 };
-
-function getApiBaseUrl() {
-  return `http://${window.location.hostname}:4000/api`;
-}
 
 function getStatusStyle(status: string) {
   switch (status) {

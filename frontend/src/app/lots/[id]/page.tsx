@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { getApiBaseUrl, getUploadBaseUrl } from "@/lib/utils";
 
 type Attachment = {
   id: string;
@@ -63,10 +64,6 @@ type LotDetail = {
   tests?: LotTest[];
 };
 
-function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:4000/api`;
-}
-
 function getStatusStyle(status: string) {
   switch (status) {
     case "INITIATED":
@@ -80,11 +77,6 @@ function getStatusStyle(status: string) {
     default:
       return "text-zinc-400 border-zinc-500/20";
   }
-}
-
-function getUploadBaseUrl() {
-  if (typeof window === "undefined") return process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-  return process.env.NEXT_PUBLIC_BACKEND_URL || `http://${window.location.hostname}:4000`;
 }
 
 function isDetectedMolecule(molecule: MoleculeResult) {

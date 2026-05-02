@@ -7,6 +7,7 @@ import { FileCheck2, FlaskConical, Inbox, Waypoints } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { getApiBaseUrl } from "@/lib/utils";
 
 type ReviewReport = {
   id: string;
@@ -26,10 +27,6 @@ type ReviewReport = {
   } | null;
   moleculeResults?: unknown[];
 };
-
-function getApiBaseUrl() {
-  return `http://${window.location.hostname}:4000/api`;
-}
 
 function getLotNumber(report: ReviewReport) {
   return report.test?.lot?.lot_number || report.lot_number || "-";

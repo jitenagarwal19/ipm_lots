@@ -1,20 +1,35 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import fs from 'fs';
 import path from 'path';
 import { PrismaClient } from '@prisma/client';
 import { requestIdMiddleware } from './middleware/requestId';
 import { serverLog } from './lib/serverLog';
+import { apiKeyAuth } from './middleware/apiKeyAuth';
+import { apiLimiter } from './middleware/rateLimits';
+import { validateProductionEnv } from './lib/validateEnv';
 
 dotenv.config({ override: true });
+
+validateProductionEnv();
 
 serverLog('BOOT IPM backend loading pid=%s cwd=%s', process.pid, process.cwd());
 
 const app = express();
+app.set('trust proxy', 1);
+
 const prisma = new PrismaClient();
 const port = process.env.PORT || 4000;
 const uploadsPath = path.join(process.cwd(), 'uploads');
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 
 app.use(requestIdMiddleware);
 
@@ -46,7 +61,22 @@ app.use(
     exposedHeaders: ['X-Request-Id'],
   })
 );
-app.use(express.json());
+
+app.use(express.json({ limit: '10mb' }));
+
+app.use((req, res, next) => {
+  const p = req.path || '';
+  if (!p.startsWith('/api')) return next();
+  if (p.startsWith('/api/webhooks')) return next();
+  return apiLimiter(req, res, next);
+});
+
+app.use((req, res, next) => {
+  const p = req.path || '';
+  if (!p.startsWith('/api')) return next();
+  if (p.startsWith('/api/webhooks')) return next();
+  return apiKeyAuth(req, res, next);
+});
 
 // Serve uploads
 app.use('/uploads', express.static(uploadsPath));

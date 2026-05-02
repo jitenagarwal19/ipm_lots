@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
+function formatUtcTimestamp(iso: string) {
+  try {
+    return `${new Date(iso).toISOString().replace("T", " ").slice(0, 19)} UTC`;
+  } catch {
+    return iso;
+  }
+}
+
 export default function MappingPage() {
   const [selectedTest, setSelectedTest] = useState<string>("");
 
@@ -59,7 +67,7 @@ export default function MappingPage() {
             <CardContent className="flex-1 space-y-4">
               <div>
                 <Label className="text-xs text-zinc-500 uppercase tracking-wider">Received</Label>
-                <p className="text-sm text-zinc-300">{new Date(email.received_at).toLocaleString()}</p>
+                <p className="text-sm text-zinc-300">{formatUtcTimestamp(email.received_at)}</p>
               </div>
               
               <div>
@@ -76,7 +84,7 @@ export default function MappingPage() {
 
               <div className="pt-4 border-t border-zinc-800">
                 <Label className="text-xs text-zinc-500 uppercase tracking-wider mb-2 block">Link to Test Request</Label>
-                <Select onValueChange={setSelectedTest}>
+                <Select onValueChange={(v) => setSelectedTest(typeof v === "string" ? v : "")}>
                   <SelectTrigger className="w-full bg-zinc-950 border-zinc-700 text-zinc-200">
                     <SelectValue placeholder="Select a pending test..." />
                   </SelectTrigger>

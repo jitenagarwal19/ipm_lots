@@ -1,14 +1,19 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { serverLog } from '../lib/serverLog';
+import { processEmailLimiter } from '../middleware/rateLimits';
 
 const router = Router();
 const prisma = new PrismaClient();
 import { getTrackedEmailsFromGmail, processTrackedEmail } from '../services/email';
 
 // Process a tracked email
-router.post('/process/:messageId', async (req, res) => {
-  const messageId = req.params.messageId;
+router.post('/process/:messageId', processEmailLimiter, async (req, res) => {
+  const rawId = req.params.messageId;
+  const messageId = Array.isArray(rawId) ? rawId[0] : rawId;
+  if (!messageId) {
+    return res.status(400).json({ error: 'Missing message id' });
+  }
   const startedAt = Date.now();
   const rid = req.requestId;
   serverLog(`[API][${rid}] POST /emails/process/${messageId} handler entered`);

@@ -1,0 +1,56 @@
+# Reference stack — copy `.env` from backend/.env.example + frontend/.env.example patterns.
+# Initialize schema on first boot (replace with `prisma migrate deploy` when you add migrations):
+#   docker compose exec backend npx prisma db push
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ipm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ipm_lots
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://ipm:${POSTGRES_PASSWORD:-changeme}@postgres:5432/ipm_lots?schema=public
+      NODE_ENV: production
+      PORT: 4000
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      SERVICE_API_KEY: ${SERVICE_API_KEY:?set SERVICE_API_KEY}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      OPEN_API_KEY: ${OPEN_API_KEY:-}
+      OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-180000}
+      OPENAI_MAX_ATTACHMENT_CHARS: ${OPENAI_MAX_ATTACHMENT_CHARS:-45000}
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_USE_BACKEND_PROXY: "true"
+        BACKEND_INTERNAL_URL: http://backend:4000
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      BACKEND_URL: http://backend:4000
+      BACKEND_INTERNAL_URL: http://backend:4000
+      BACKEND_SERVICE_TOKEN: ${SERVICE_API_KEY:?set SERVICE_API_KEY}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
