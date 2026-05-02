@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 
 export default function MappingPage() {
-  const [selectedTest, setSelectedTest] = useState<string>("");
+  const [selectedTest, setSelectedTest] = useState<string | null>(null);
 
   // Mock data for emails
   const unmappedEmails = [

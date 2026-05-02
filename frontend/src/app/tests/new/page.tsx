@@ -20,11 +20,11 @@ export default function CreateTestPage() {
   const [labs, setLabs] = useState<any[]>([]);
   const [testTypes, setTestTypes] = useState<any[]>([]);
 
-  const [selectedProduct, setSelectedProduct] = useState<string>("");
-  const [selectedVariant, setSelectedVariant] = useState<string>("none");
-  const [selectedCompany, setSelectedCompany] = useState<string>("");
-  const [selectedLab, setSelectedLab] = useState<string>("");
-  const [selectedTestType, setSelectedTestType] = useState<string>("");
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<string | null>("none");
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  const [selectedLab, setSelectedLab] = useState<string | null>(null);
+  const [selectedTestType, setSelectedTestType] = useState<string | null>(null);
 
   useEffect(() => {
     const apiBaseUrl = getApiBaseUrl();
