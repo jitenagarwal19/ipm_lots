@@ -10,13 +10,24 @@ router.get('/', async (req, res) => {
   try {
     const tests = await prisma.test.findMany({
       include: {
-        lot: true,
+        lot: {
+          include: {
+            product: true,
+          },
+        },
         lab: true,
         test_type: true,
+        vendor: true,
+        sampled_by_staff: true,
         labReports: {
-          where: { status: 'PENDING_REVIEW' },
           orderBy: { createdAt: 'desc' },
-          take: 1,
+          take: 10,
+          include: {
+            moleculeResults: {
+              orderBy: { molecule_name: 'asc' },
+              take: 50,
+            },
+          },
         },
       },
     });
@@ -41,6 +52,8 @@ router.get('/:id', async (req, res) => {
         },
         lab: true,
         test_type: true,
+        vendor: true,
+        sampled_by_staff: true,
         emails: {
           orderBy: { received_at: 'desc' },
           include: {
@@ -70,7 +83,20 @@ router.get('/:id', async (req, res) => {
 
 // Create Test (and Lot if needed)
 router.post('/', async (req, res) => {
-  const { lot_number, product_id, variant_id, company_id, lab_id, test_type_id } = req.body;
+  const {
+    lot_number,
+    product_id,
+    variant_id,
+    company_id,
+    lab_id,
+    test_type_id,
+    send_email: sendEmailBody,
+    vendor_id,
+    region,
+    sampled_by_staff_id,
+  } = req.body;
+
+  const sendEmail = sendEmailBody !== false;
 
   try {
     // Upsert the Lot
@@ -86,20 +112,39 @@ router.post('/', async (req, res) => {
       });
     }
 
+    const testCreateData: {
+      lot_id: string;
+      lab_id: string;
+      test_type_id: string;
+      status: string;
+      vendor_id?: string | null;
+      region?: string | null;
+      sampled_by_staff_id?: string | null;
+    } = {
+      lot_id: lot.id,
+      lab_id,
+      test_type_id,
+      status: 'INITIATED',
+      vendor_id: vendor_id || null,
+      region: typeof region === 'string' && region.trim() ? region.trim() : null,
+      sampled_by_staff_id: sampled_by_staff_id || null,
+    };
+
     // Create Test
     const test = await prisma.test.create({
-      data: {
-        lot_id: lot.id,
-        lab_id,
-        test_type_id,
-        status: 'INITIATED',
-      },
+      data: testCreateData,
       include: {
         lot: true,
         lab: { include: { contacts: true } },
-        test_type: true
+        test_type: true,
+        vendor: true,
+        sampled_by_staff: true,
       }
     });
+
+    if (!sendEmail) {
+      return res.json(test);
+    }
 
     try {
       const labEmail = test.lab?.contacts?.find(c => c.is_primary)?.email || test.lab?.contacts?.[0]?.email;
@@ -121,7 +166,14 @@ router.post('/', async (req, res) => {
         data: { 
           status: 'AWAITING_REPORT',
           email_thread_id: emailResult.threadId
-        }
+        },
+        include: {
+          lot: true,
+          lab: { include: { contacts: true } },
+          test_type: true,
+          vendor: true,
+          sampled_by_staff: true,
+        },
       });
 
       // Log the sent email

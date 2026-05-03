@@ -22,11 +22,19 @@ type LabReportAnalysis = {
 
 type ProcessingTimings = Record<string, number | undefined>;
 
+type SectionBreakdown = {
+  kind: "body" | "attachment";
+  filename?: string;
+  reports: number;
+  durationMs: number;
+  error: string | null;
+};
+
 const processingStages = [
   { maxElapsedMs: 2000, label: "Fetching Gmail message", progress: 18 },
   { maxElapsedMs: 6000, label: "Downloading attachments", progress: 38 },
   { maxElapsedMs: 12000, label: "Reading PDF text", progress: 55 },
-  { maxElapsedMs: 25000, label: "Extracting with OpenAI", progress: 78 },
+  { maxElapsedMs: 25000, label: "Running OpenAI sections in parallel (body + per-PDF)", progress: 78 },
   {
     maxElapsedMs: Number.POSITIVE_INFINITY,
     label: "OpenAI still running or saving to DB (see backend terminal for [PROCESS] logs)",
@@ -94,22 +102,50 @@ export default function TrackedEmailsPage() {
       } else {
         const reports: LabReportAnalysis[] = Array.isArray(data.analysis) ? data.analysis : [];
         const timings: ProcessingTimings = data.timings || {};
+        const sections: SectionBreakdown[] = Array.isArray(data.sectionsBreakdown) ? data.sectionsBreakdown : [];
+        const sectionFailures: number = typeof data.sectionFailures === "number" ? data.sectionFailures : 0;
+        const skippedNonPdfAttachments: number =
+          typeof data.skippedNonPdfAttachments === "number" ? data.skippedNonPdfAttachments : 0;
         const lotNumbers = reports
           .map(report => report.lotNumber)
           .filter(Boolean)
           .join(', ');
         const timingLines = [
           `Total: ${timings.totalMs ?? '-'} ms`,
-          `OpenAI: ${timings.openAiMs ?? '-'} ms`,
+          `OpenAI (parallel sections): ${timings.openAiMs ?? '-'} ms`,
           `Attachments/PDF: ${timings.attachmentProcessingMs ?? '-'} ms`,
           `Gmail fetch: ${timings.gmailMessageFetchMs ?? '-'} ms`,
           `Gmail label: ${timings.processedLabelMs ?? '-'} ms`,
           `DB save: ${(timings.emailSaveMs || 0) + (timings.reportSaveMs || 0)} ms`,
         ].join('\n');
+        const sectionLines = sections.length
+          ? sections
+              .map(s => {
+                const label = s.kind === 'body' ? 'body' : `att:${s.filename || '?'}`;
+                const summary = s.error ? `FAILED (${s.error})` : `${s.reports} report(s)`;
+                return `  • ${label} → ${summary} in ${s.durationMs}ms`;
+              })
+              .join('\n')
+          : '  (no sections ran)';
         const labelStatus = data.processedLabelApplied
           ? 'Gmail label: processed'
           : data.processedLabelError ? `Gmail label warning: ${data.processedLabelError}` : '';
-        alert(`Status: ${data.status}\nReports extracted: ${reports.length}\nExtracted Lots: ${lotNumbers || 'None'}${labelStatus ? `\n${labelStatus}` : ''}\n\nTiming:\n${timingLines}`);
+        const sectionFailureLine = sectionFailures > 0
+          ? `\n${sectionFailures} section(s) failed — see browser console + backend [PROCESS] logs.`
+          : '';
+        const skippedLine = skippedNonPdfAttachments > 0
+          ? `\nSkipped ${skippedNonPdfAttachments} non-PDF attachment(s).`
+          : '';
+        console.info("[tracked-emails] sectionsBreakdown", { messageId, sections, sectionFailures, skippedNonPdfAttachments });
+        alert(
+          `Status: ${data.status}` +
+          `\nReports extracted: ${reports.length}` +
+          `\nExtracted Lots: ${lotNumbers || 'None'}${labelStatus ? `\n${labelStatus}` : ''}` +
+          sectionFailureLine +
+          skippedLine +
+          `\n\nSections:\n${sectionLines}` +
+          `\n\nTiming:\n${timingLines}`
+        );
         setEmails(prev => prev.map(e => e.id === messageId ? { ...e, isProcessed: true } : e));
       }
     } catch (err) {

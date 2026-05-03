@@ -55,6 +55,22 @@ model Company {
   updatedAt DateTime @updatedAt
 }
 
+model Vendor {
+  id        String   @id @default(uuid())
+  name      String
+  tests     Test[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Staff {
+  id        String   @id @default(uuid())
+  name      String
+  tests     Test[]   @relation("SampledByStaff")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model TestType {
   id               String   @id @default(uuid())
   name             String
@@ -81,19 +97,24 @@ model Lot {
 
 
 model Test {
-  id              String     @id @default(uuid())
-  lot_id          String
-  lot             Lot        @relation(fields: [lot_id], references: [id])
-  lab_id          String
-  lab             Lab        @relation(fields: [lab_id], references: [id])
-  test_type_id    String
-  test_type       TestType   @relation(fields: [test_type_id], references: [id])
-  status          String     @default("INITIATED")
-  email_thread_id String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  emails          Email[]
-  labReports      LabReport[]
+  id                    String     @id @default(uuid())
+  lot_id                String
+  lot                   Lot        @relation(fields: [lot_id], references: [id])
+  lab_id                String
+  lab                   Lab        @relation(fields: [lab_id], references: [id])
+  test_type_id          String
+  test_type             TestType   @relation(fields: [test_type_id], references: [id])
+  vendor_id             String?
+  vendor                Vendor?    @relation(fields: [vendor_id], references: [id])
+  region                String?
+  sampled_by_staff_id   String?
+  sampled_by_staff      Staff?     @relation("SampledByStaff", fields: [sampled_by_staff_id], references: [id])
+  status                String     @default("INITIATED")
+  email_thread_id       String?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  emails                Email[]
+  labReports            LabReport[]
 }
 
 model Email {

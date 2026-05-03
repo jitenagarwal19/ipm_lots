@@ -18,7 +18,9 @@ export default function SettingsPage() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [testTypes, setTestTypes] = useState<any[]>([]);
   const [variants, setVariants] = useState<any[]>([]);
-  
+  const [vendors, setVendors] = useState<any[]>([]);
+  const [staff, setStaff] = useState<any[]>([]);
+
   const [trackedLabels, setTrackedLabels] = useState("");
 
   const [isLabDialogOpen, setIsLabDialogOpen] = useState(false);
@@ -26,6 +28,8 @@ export default function SettingsPage() {
   const [isCompanyDialogOpen, setIsCompanyDialogOpen] = useState(false);
   const [isTestTypeDialogOpen, setIsTestTypeDialogOpen] = useState(false);
   const [isVariantDialogOpen, setIsVariantDialogOpen] = useState(false);
+  const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false);
+  const [isStaffDialogOpen, setIsStaffDialogOpen] = useState(false);
 
   const [editId, setEditId] = useState<string | null>(null);
 
@@ -36,15 +40,17 @@ export default function SettingsPage() {
 
   const fetchData = async () => {
     try {
-      const [l, p, c, t, v, s] = await Promise.all([
+      const [l, p, c, t, v, ven, stf, s] = await Promise.all([
         fetch(`${API_BASE_URL}/labs`).then(r => r.json()),
         fetch(`${API_BASE_URL}/products`).then(r => r.json()),
         fetch(`${API_BASE_URL}/companies`).then(r => r.json()),
         fetch(`${API_BASE_URL}/test-types`).then(r => r.json()),
         fetch(`${API_BASE_URL}/variants`).then(r => r.json()),
+        fetch(`${API_BASE_URL}/vendors`).then(r => r.json()),
+        fetch(`${API_BASE_URL}/staff`).then(r => r.json()),
         fetch(`${API_BASE_URL}/system`).then(r => r.json()),
       ]);
-      setLabs(l); setProducts(p); setCompanies(c); setTestTypes(t); setVariants(v);
+      setLabs(l); setProducts(p); setCompanies(c); setTestTypes(t); setVariants(v); setVendors(ven); setStaff(stf);
       setTrackedLabels(s.tracked_email_labels || "");
     } catch (e) {
       console.error("Error fetching settings:", e);
@@ -133,7 +139,7 @@ export default function SettingsPage() {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
       <div>
         <h2 className="text-3xl font-bold tracking-tight text-white">Settings</h2>
-        <p className="text-zinc-400 mt-2">Manage Master Data (Labs, Products, Companies, and Test Types).</p>
+        <p className="text-zinc-400 mt-2">Manage master data: labs, products, vendors, sampling staff, companies, and test types.</p>
       </div>
 
       <Tabs defaultValue="labs" className="w-full">
@@ -141,6 +147,8 @@ export default function SettingsPage() {
           <TabsTrigger value="labs" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Labs</TabsTrigger>
           <TabsTrigger value="products" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Products</TabsTrigger>
           <TabsTrigger value="variants" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Variants</TabsTrigger>
+          <TabsTrigger value="vendors" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Vendors</TabsTrigger>
+          <TabsTrigger value="staff" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Staff</TabsTrigger>
           <TabsTrigger value="companies" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Companies</TabsTrigger>
           <TabsTrigger value="testtypes" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Test Types</TabsTrigger>
           <TabsTrigger value="emailtracking" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Email Tracking</TabsTrigger>
@@ -231,9 +239,11 @@ export default function SettingsPage() {
 
         {/* Generic Tabs content for simple entities */}
         {[
-          { key: 'products', title: 'Products', desc: 'Manage your spice inventory types.', data: products, setter: setIsProductDialogOpen, isOpen: isProductDialogOpen, endpoint: 'products', type: 'product' },
-          { key: 'variants', title: 'Variants', desc: 'Manage product variants.', data: variants, setter: setIsVariantDialogOpen, isOpen: isVariantDialogOpen, endpoint: 'variants', type: 'variant' },
-          { key: 'companies', title: 'Companies', desc: 'Internal companies / exporters.', data: companies, setter: setIsCompanyDialogOpen, isOpen: isCompanyDialogOpen, endpoint: 'companies', type: 'company' },
+          { key: 'products', title: 'Products', singular: 'Product', desc: 'Manage your spice inventory types.', data: products, setter: setIsProductDialogOpen, isOpen: isProductDialogOpen, endpoint: 'products', type: 'product' },
+          { key: 'variants', title: 'Variants', singular: 'Variant', desc: 'Manage product variants.', data: variants, setter: setIsVariantDialogOpen, isOpen: isVariantDialogOpen, endpoint: 'variants', type: 'variant' },
+          { key: 'vendors', title: 'Vendors', singular: 'Vendor', desc: 'Suppliers and vendors referenced on test requests.', data: vendors, setter: setIsVendorDialogOpen, isOpen: isVendorDialogOpen, endpoint: 'vendors', type: 'vendor' },
+          { key: 'staff', title: 'Sampling staff', singular: 'Staff member', desc: 'People who collect samples (shown on test requests).', data: staff, setter: setIsStaffDialogOpen, isOpen: isStaffDialogOpen, endpoint: 'staff', type: 'staff' },
+          { key: 'companies', title: 'Companies', singular: 'Company', desc: 'Internal companies / exporters.', data: companies, setter: setIsCompanyDialogOpen, isOpen: isCompanyDialogOpen, endpoint: 'companies', type: 'company' },
         ].map(tab => (
           <TabsContent key={tab.key} value={tab.key} className="mt-0 outline-none">
             <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
@@ -244,12 +254,12 @@ export default function SettingsPage() {
                 </div>
                 <Dialog open={tab.isOpen} onOpenChange={(val) => { tab.setter(val); if (!val) setEditId(null); }}>
                   <DialogTrigger asChild>
-                    <Button onClick={() => { setEditId(null); setNewName(''); }} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add {tab.title.slice(0,-1)}</Button>
+                    <Button onClick={() => { setEditId(null); setNewName(''); }} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add {tab.singular}</Button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-[425px] bg-zinc-900 border-zinc-800 text-white">
                     <form onSubmit={(e) => { e.preventDefault(); handlePostOrPut(tab.endpoint, { name: newName }, tab.setter); }}>
                       <DialogHeader>
-                        <DialogTitle>{editId ? 'Edit' : 'Add'} {tab.title.slice(0,-1)}</DialogTitle>
+                        <DialogTitle>{editId ? 'Edit' : 'Add'} {tab.singular}</DialogTitle>
                       </DialogHeader>
                       <div className="grid gap-4 py-4">
                         <div className="space-y-2">

@@ -4,9 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
 import { getApiBaseUrl } from "@/lib/utils";
 
 type TestRow = {
@@ -16,7 +14,10 @@ type TestRow = {
   createdAt: string;
   lot?: {
     lot_number?: string | null;
+    product?: { name?: string | null } | null;
   } | null;
+  vendor?: { name?: string | null } | null;
+  sampled_by_staff?: { name?: string | null } | null;
   test_type?: {
     name?: string | null;
   } | null;
@@ -26,22 +27,20 @@ type TestRow = {
   labReports?: {
     id: string;
     status: string;
+    moleculeResults?: {
+      id: string;
+      molecule_name: string;
+      result?: string | null;
+      status?: string | null;
+      is_detected?: boolean | null;
+      is_compliant?: boolean | null;
+    }[];
   }[];
-};
-
-type FetchEmailsResponse = {
-  error?: string;
-  processedCount?: number;
-  mappedCount?: number;
-  skippedCount?: number;
-  errorCount?: number;
 };
 
 export default function TestsPage() {
   const [tests, setTests] = useState<TestRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isFetchingEmails, setIsFetchingEmails] = useState(false);
-  const [lastFetchTime, setLastFetchTime] = useState<string | null>(null);
 
   const loadTests = async () => {
     try {
@@ -61,42 +60,53 @@ export default function TestsPage() {
     // Fetching initial API state on mount is intentional for this page.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadTests();
-    const storedFetchTime = localStorage.getItem("lastEmailFetchTime");
-    if (storedFetchTime) {
-      setLastFetchTime(storedFetchTime);
-    }
   }, []);
 
-  const handleFetchEmails = async () => {
-    setIsFetchingEmails(true);
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/tests/fetch-emails`, {
-        method: 'POST'
-      });
-      const data: FetchEmailsResponse = await res.json();
-      if (res.ok) {
-        const now = new Date().toISOString();
-        setLastFetchTime(now);
-        localStorage.setItem("lastEmailFetchTime", now);
-        
-        const processedCount = data.processedCount || 0;
-        const skippedCount = data.skippedCount || 0;
-        if (processedCount > 0) {
-          alert(`Fetched ${processedCount} new report email${processedCount === 1 ? '' : 's'}.\nMapped to tests: ${data.mappedCount || 0}\nSkipped: ${skippedCount}${data.errorCount ? `\nErrors: ${data.errorCount}` : ''}`);
-          await loadTests(); // Reload to show updated statuses
-        } else {
-          alert(`No new lab reports found.${skippedCount ? `\nSkipped: ${skippedCount}` : ''}`);
-        }
-      } else {
-        alert(data.error || "Failed to fetch emails.");
-      }
-    } catch (e) {
-      console.error("Failed to fetch emails:", e);
-      alert("Error fetching emails");
-    } finally {
-      setIsFetchingEmails(false);
-    }
+  const lotInfoLines = (test: TestRow) => {
+    const product = test.lot?.product?.name?.trim() || "—";
+    const vendor = test.vendor?.name?.trim() || "—";
+    const sampled = test.sampled_by_staff?.name?.trim() || "—";
+    return { product, vendor, sampled };
   };
+
+  type ListMolecule = NonNullable<NonNullable<TestRow["labReports"]>[number]["moleculeResults"]>[number];
+
+  function isDetectedMolecule(molecule: ListMolecule) {
+    if (molecule.is_detected === true) return true;
+    if (molecule.is_detected === false) return false;
+    const combined = `${molecule.status || ""} ${molecule.result || ""}`.toLowerCase();
+    if (combined.includes("not detected") || combined.includes("non detect") || /\bnd\b/.test(combined)) {
+      return false;
+    }
+    return combined.includes("detected") || /\d/.test(combined);
+  }
+
+  function resultSummary(test: TestRow): { text: string; tone: "default" | "ok" | "warn" } {
+    const reports = test.labReports || [];
+    const withMols = reports.find((r) => (r.moleculeResults?.length ?? 0) > 0) ?? reports[0];
+    const molecules = withMols?.moleculeResults || [];
+    if (molecules.length === 0) {
+      return { text: "—", tone: "default" };
+    }
+    const detected = molecules.filter(isDetectedMolecule);
+    if (detected.length === 0) {
+      return { text: "No detections", tone: "ok" };
+    }
+    const parts = detected.slice(0, 4).map((m) => {
+      const val = (m.result || m.status || "").trim();
+      return val ? `${m.molecule_name}: ${val}` : m.molecule_name;
+    });
+    const extra = detected.length > 4 ? ` +${detected.length - 4} more` : "";
+    const nonCompliant = detected.some((m) => m.is_compliant === false);
+    return {
+      text: parts.join(" · ") + extra,
+      tone: nonCompliant ? "warn" : "default",
+    };
+  }
+
+  function pendingReviewReport(test: TestRow) {
+    return test.labReports?.find((r) => r.status === "PENDING_REVIEW");
+  }
 
   const getStatusStyle = (status: string) => {
     switch(status) {
@@ -117,22 +127,6 @@ export default function TestsPage() {
           <p className="text-zinc-400 mt-2">Manage your spice lots and lab test requests.</p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex flex-col items-end mr-2">
-            <Button 
-              variant="outline" 
-              className="border-zinc-700 bg-zinc-800/50 text-white hover:bg-zinc-800"
-              onClick={handleFetchEmails}
-              disabled={isFetchingEmails}
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isFetchingEmails ? 'animate-spin' : ''}`} />
-              {isFetchingEmails ? 'Fetching...' : 'Fetch Emails'}
-            </Button>
-            {lastFetchTime && (
-              <span className="text-xs text-zinc-500 mt-1">
-                Last fetched: {formatDistanceToNow(new Date(lastFetchTime), { addSuffix: true })}
-              </span>
-            )}
-          </div>
           <Link href="/tests/new">
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
               Create Test Request
@@ -150,56 +144,85 @@ export default function TestsPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="text-zinc-400">Lot Number</TableHead>
-                <TableHead className="text-zinc-400">Test Type</TableHead>
+                <TableHead className="text-zinc-400 whitespace-nowrap">Date</TableHead>
+                <TableHead className="text-zinc-400 min-w-[10rem]">Test lot information</TableHead>
+                <TableHead className="text-zinc-400 min-w-0 max-w-[18rem] w-[18rem]">Result</TableHead>
+                <TableHead className="text-zinc-400">Lot number</TableHead>
+                <TableHead className="text-zinc-400">Test type</TableHead>
                 <TableHead className="text-zinc-400">Lab</TableHead>
                 <TableHead className="text-zinc-400">Status</TableHead>
                 <TableHead className="text-zinc-400">Review</TableHead>
-                <TableHead className="text-zinc-400 text-right">Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-zinc-500 py-8">Loading tests...</TableCell>
+                  <TableCell colSpan={8} className="text-center text-zinc-500 py-8">Loading tests...</TableCell>
                 </TableRow>
               ) : tests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-zinc-500 py-8">No tests initiated yet.</TableCell>
+                  <TableCell colSpan={8} className="text-center text-zinc-500 py-8">No tests initiated yet.</TableCell>
                 </TableRow>
               ) : (
-                tests.map((test) => (
+                tests.map((test) => {
+                  const info = lotInfoLines(test);
+                  const summary = resultSummary(test);
+                  const pending = pendingReviewReport(test);
+                  return (
                   <TableRow key={test.id} className="border-zinc-800 hover:bg-zinc-800/50 transition-colors">
-                    <TableCell className="font-medium text-emerald-400 cursor-pointer hover:underline">
+                    <TableCell className="whitespace-nowrap text-zinc-400 align-top">
+                      {new Date(test.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-zinc-300 text-sm align-top">
+                      <div className="space-y-0.5 max-w-xs">
+                        <div><span className="text-zinc-500">Product</span> {info.product}</div>
+                        <div><span className="text-zinc-500">Vendor</span> {info.vendor}</div>
+                        <div><span className="text-zinc-500">Sampled by</span> {info.sampled}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="align-top min-w-0 max-w-[18rem] w-[18rem]">
+                      <span
+                        title={summary.text !== "—" ? summary.text : undefined}
+                        className={
+                          "block w-full min-w-0 truncate text-sm cursor-help " +
+                          (summary.tone === "ok"
+                            ? "text-emerald-400/90"
+                            : summary.tone === "warn"
+                              ? "text-amber-300/90"
+                              : "text-zinc-300")
+                        }
+                      >
+                        {summary.text}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-medium text-emerald-400 cursor-pointer hover:underline align-top">
                       <Link href={`/lots/${test.lot_id}`}>
                         {test.lot?.lot_number || "Unknown"}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-zinc-200">
+                    <TableCell className="text-zinc-200 align-top">
                       <Link href={`/tests/${test.id}`} className="hover:text-emerald-400 hover:underline">
                         {test.test_type?.name || "Unknown"}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-zinc-400">{test.lab?.name || "Unknown"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-zinc-400 align-top">{test.lab?.name || "Unknown"}</TableCell>
+                    <TableCell className="align-top">
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(test.status)}`}>
                         {test.status}
                       </span>
                     </TableCell>
-                    <TableCell className="text-zinc-300">
-                      {test.labReports?.[0] ? (
-                        <Link href={`/reviews/${test.labReports[0].id}`} className="text-amber-400 hover:underline text-sm">
+                    <TableCell className="text-zinc-300 align-top">
+                      {pending ? (
+                        <Link href={`/reviews/${pending.id}`} className="text-amber-400 hover:underline text-sm">
                           Review report
                         </Link>
                       ) : (
                         <span className="text-zinc-600">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right text-zinc-400">
-                      {new Date(test.createdAt).toLocaleDateString()}
-                    </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

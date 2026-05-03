@@ -106,6 +106,34 @@ router.put('/companies/:id', async (req, res) => {
   res.json(company);
 });
 
+// Vendors
+router.get('/vendors', async (req, res) => {
+  const vendors = await prisma.vendor.findMany({ orderBy: { name: 'asc' } });
+  res.json(vendors);
+});
+router.post('/vendors', async (req, res) => {
+  const vendor = await prisma.vendor.create({ data: { name: req.body.name } });
+  res.json(vendor);
+});
+router.put('/vendors/:id', async (req, res) => {
+  const vendor = await prisma.vendor.update({ where: { id: req.params.id }, data: { name: req.body.name } });
+  res.json(vendor);
+});
+
+// Staff (sampling)
+router.get('/staff', async (req, res) => {
+  const staff = await prisma.staff.findMany({ orderBy: { name: 'asc' } });
+  res.json(staff);
+});
+router.post('/staff', async (req, res) => {
+  const member = await prisma.staff.create({ data: { name: req.body.name } });
+  res.json(member);
+});
+router.put('/staff/:id', async (req, res) => {
+  const member = await prisma.staff.update({ where: { id: req.params.id }, data: { name: req.body.name } });
+  res.json(member);
+});
+
 // Test Types
 router.get('/test-types', async (req, res) => {
   const testTypes = await prisma.testType.findMany();
