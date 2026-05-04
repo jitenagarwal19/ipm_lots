@@ -143,6 +143,18 @@ router.get('/:id', async (req, res) => {
               include: {
                 attachment: true,
                 moleculeResults: true,
+                complianceChecks: {
+                  include: {
+                    standard: true,
+                    moleculeResults: {
+                      include: {
+                        moleculeResult: true,
+                        molecule: true,
+                      },
+                    },
+                  },
+                  orderBy: { checked_at: 'desc' },
+                },
               },
             },
           },

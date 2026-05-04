@@ -1,8 +1,42 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import multer from 'multer';
+import { parse } from 'csv-parse/sync';
+import { normalizeMoleculeName } from '../services/compliance';
 
 const router = Router();
 const prisma = new PrismaClient();
+const upload = multer({ storage: multer.memoryStorage() });
+
+function requiredString(value: unknown, field: string) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`${field} is required.`);
+  }
+  return value.trim();
+}
+
+function optionalString(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function numberValue(value: unknown, field: string) {
+  const n = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  if (!Number.isFinite(n)) {
+    throw new Error(`${field} must be a number.`);
+  }
+  return n;
+}
+
+function boolValue(value: unknown, fallback = true) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  const v = value.trim().toLowerCase();
+  if (['true', 'yes', '1'].includes(v)) return true;
+  if (['false', 'no', '0'].includes(v)) return false;
+  return fallback;
+}
 
 // Labs
 router.get('/labs', async (req, res) => {
@@ -160,6 +194,306 @@ router.post('/variants', async (req, res) => {
 router.put('/variants/:id', async (req, res) => {
   const variant = await prisma.variant.update({ where: { id: req.params.id }, data: { name: req.body.name } });
   res.json(variant);
+});
+
+// Molecules
+router.get('/molecules', async (req, res) => {
+  const molecules = await prisma.molecule.findMany({
+    orderBy: { name: 'asc' },
+    include: { aliases: { orderBy: { alias: 'asc' } } },
+  });
+  res.json(molecules);
+});
+
+router.post('/molecules', async (req, res) => {
+  try {
+    const name = requiredString(req.body.name, 'name');
+    const molecule = await prisma.molecule.create({
+      data: {
+        name,
+        normalized_name: normalizeMoleculeName(name),
+        cas_number: optionalString(req.body.cas_number),
+        is_active: boolValue(req.body.is_active, true),
+      },
+      include: { aliases: true },
+    });
+    res.json(molecule);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.put('/molecules/:id', async (req, res) => {
+  try {
+    const name = requiredString(req.body.name, 'name');
+    const molecule = await prisma.molecule.update({
+      where: { id: req.params.id },
+      data: {
+        name,
+        normalized_name: normalizeMoleculeName(name),
+        cas_number: optionalString(req.body.cas_number),
+        is_active: boolValue(req.body.is_active, true),
+      },
+      include: { aliases: true },
+    });
+    res.json(molecule);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Molecule aliases
+router.get('/molecule-aliases', async (req, res) => {
+  const aliases = await prisma.moleculeAlias.findMany({
+    orderBy: { alias: 'asc' },
+    include: { molecule: true },
+  });
+  res.json(aliases);
+});
+
+router.post('/molecule-aliases', async (req, res) => {
+  try {
+    const alias = requiredString(req.body.alias, 'alias');
+    const molecule_id = requiredString(req.body.molecule_id, 'molecule_id');
+    const created = await prisma.moleculeAlias.create({
+      data: {
+        molecule_id,
+        alias,
+        normalized_alias: normalizeMoleculeName(alias),
+        source: optionalString(req.body.source),
+      },
+      include: { molecule: true },
+    });
+    res.json(created);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.put('/molecule-aliases/:id', async (req, res) => {
+  try {
+    const alias = requiredString(req.body.alias, 'alias');
+    const updated = await prisma.moleculeAlias.update({
+      where: { id: req.params.id },
+      data: {
+        molecule_id: requiredString(req.body.molecule_id, 'molecule_id'),
+        alias,
+        normalized_alias: normalizeMoleculeName(alias),
+        source: optionalString(req.body.source),
+      },
+      include: { molecule: true },
+    });
+    res.json(updated);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Compliance standards
+router.get('/compliance-standards', async (req, res) => {
+  const standards = await prisma.complianceStandard.findMany({ orderBy: { name: 'asc' } });
+  res.json(standards);
+});
+
+router.post('/compliance-standards', async (req, res) => {
+  try {
+    const code = requiredString(req.body.code, 'code').toUpperCase();
+    const standard = await prisma.complianceStandard.create({
+      data: {
+        code,
+        name: requiredString(req.body.name, 'name'),
+        fallback_limit: req.body.fallback_limit === undefined || req.body.fallback_limit === ''
+          ? 0.01
+          : numberValue(req.body.fallback_limit, 'fallback_limit'),
+        fallback_unit: optionalString(req.body.fallback_unit) || 'mg/kg',
+        is_active: boolValue(req.body.is_active, true),
+      },
+    });
+    res.json(standard);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.put('/compliance-standards/:id', async (req, res) => {
+  try {
+    const standard = await prisma.complianceStandard.update({
+      where: { id: req.params.id },
+      data: {
+        code: requiredString(req.body.code, 'code').toUpperCase(),
+        name: requiredString(req.body.name, 'name'),
+        fallback_limit: numberValue(req.body.fallback_limit, 'fallback_limit'),
+        fallback_unit: optionalString(req.body.fallback_unit) || 'mg/kg',
+        is_active: boolValue(req.body.is_active, true),
+      },
+    });
+    res.json(standard);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Compliance limits
+router.get('/compliance-limits', async (req, res) => {
+  const limits = await prisma.complianceLimit.findMany({
+    orderBy: [{ updatedAt: 'desc' }],
+    include: { standard: true, molecule: true, product: true },
+  });
+  res.json(limits);
+});
+
+async function upsertComplianceLimit(input: {
+  standard_id: string;
+  molecule_id: string;
+  product_id: string | null;
+  limit_value: number;
+  unit: string;
+  notes: string | null;
+}) {
+  const existing = await prisma.complianceLimit.findFirst({
+    where: {
+      standard_id: input.standard_id,
+      molecule_id: input.molecule_id,
+      product_id: input.product_id,
+    },
+  });
+  if (existing) {
+    return prisma.complianceLimit.update({
+      where: { id: existing.id },
+      data: {
+        limit_value: input.limit_value,
+        unit: input.unit,
+        notes: input.notes,
+      },
+      include: { standard: true, molecule: true, product: true },
+    });
+  }
+  return prisma.complianceLimit.create({
+    data: input,
+    include: { standard: true, molecule: true, product: true },
+  });
+}
+
+router.post('/compliance-limits', async (req, res) => {
+  try {
+    const limit = await upsertComplianceLimit({
+      standard_id: requiredString(req.body.standard_id, 'standard_id'),
+      molecule_id: requiredString(req.body.molecule_id, 'molecule_id'),
+      product_id: optionalString(req.body.product_id),
+      limit_value: numberValue(req.body.limit_value, 'limit_value'),
+      unit: optionalString(req.body.unit) || 'mg/kg',
+      notes: optionalString(req.body.notes),
+    });
+    res.json(limit);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.put('/compliance-limits/:id', async (req, res) => {
+  try {
+    const limit = await prisma.complianceLimit.update({
+      where: { id: req.params.id },
+      data: {
+        standard_id: requiredString(req.body.standard_id, 'standard_id'),
+        molecule_id: requiredString(req.body.molecule_id, 'molecule_id'),
+        product_id: optionalString(req.body.product_id),
+        limit_value: numberValue(req.body.limit_value, 'limit_value'),
+        unit: optionalString(req.body.unit) || 'mg/kg',
+        notes: optionalString(req.body.notes),
+      },
+      include: { standard: true, molecule: true, product: true },
+    });
+    res.json(limit);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/compliance-limits/import', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'CSV file is required.' });
+    }
+
+    const rows = parse(req.file.buffer.toString('utf8'), {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+    }) as Record<string, string>[];
+
+    const errors: string[] = [];
+    let imported = 0;
+
+    for (const [idx, row] of rows.entries()) {
+      try {
+        const standardCode = requiredString(row.standard_code || row.standard, 'standard_code').toUpperCase();
+        const standardName = optionalString(row.standard_name) || standardCode;
+        const moleculeName = requiredString(row.molecule_name || row.molecule, 'molecule_name');
+        const normalized = normalizeMoleculeName(moleculeName);
+        const productName = optionalString(row.product_name || row.product);
+
+        const standard = await prisma.complianceStandard.upsert({
+          where: { code: standardCode },
+          update: {
+            name: standardName,
+            fallback_limit: optionalString(row.fallback_limit) ? numberValue(row.fallback_limit, 'fallback_limit') : undefined,
+            fallback_unit: optionalString(row.fallback_unit) || undefined,
+          },
+          create: {
+            code: standardCode,
+            name: standardName,
+            fallback_limit: optionalString(row.fallback_limit) ? numberValue(row.fallback_limit, 'fallback_limit') : 0.01,
+            fallback_unit: optionalString(row.fallback_unit) || optionalString(row.unit) || 'mg/kg',
+          },
+        });
+
+        const molecule = await prisma.molecule.upsert({
+          where: { normalized_name: normalized },
+          update: { cas_number: optionalString(row.cas_number) || undefined },
+          create: {
+            name: moleculeName,
+            normalized_name: normalized,
+            cas_number: optionalString(row.cas_number),
+          },
+        });
+
+        for (const rawAlias of (row.aliases || '').split(/[;|]/)) {
+          const alias = rawAlias.trim();
+          if (!alias) continue;
+          await prisma.moleculeAlias.upsert({
+            where: { normalized_alias: normalizeMoleculeName(alias) },
+            update: { molecule_id: molecule.id, alias },
+            create: { molecule_id: molecule.id, alias, normalized_alias: normalizeMoleculeName(alias), source: 'csv_import' },
+          });
+        }
+
+        let product = null;
+        if (productName) {
+          product = await prisma.product.findFirst({ where: { name: productName } });
+          if (!product) {
+            product = await prisma.product.create({ data: { name: productName } });
+          }
+        }
+
+        await upsertComplianceLimit({
+          standard_id: standard.id,
+          molecule_id: molecule.id,
+          product_id: product?.id ?? null,
+          limit_value: numberValue(row.limit_value || row.limit || row.mrl, 'limit_value'),
+          unit: optionalString(row.unit) || standard.fallback_unit || 'mg/kg',
+          notes: optionalString(row.notes),
+        });
+        imported++;
+      } catch (error: any) {
+        errors.push(`Row ${idx + 2}: ${error.message}`);
+      }
+    }
+
+    res.json({ imported, errors });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 // System Settings

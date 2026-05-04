@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { buildCompliancePreview, recordComplianceAgreement } from '../services/compliance';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -45,6 +46,10 @@ router.get('/', async (req, res) => {
         email: true,
         attachment: true,
         moleculeResults: true,
+        complianceChecks: {
+          include: { standard: true },
+          orderBy: { checked_at: 'desc' },
+        },
       },
     });
 
@@ -80,6 +85,125 @@ router.get('/', async (req, res) => {
   }
 });
 
+const EDITABLE_REPORT_STATUSES = new Set(['PENDING_REVIEW', 'UNMAPPED']);
+
+router.patch('/:id/molecules/:moleculeId', async (req, res) => {
+  try {
+    const reportId = req.params.id;
+    const moleculeId = req.params.moleculeId;
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+
+    const report = await prisma.labReport.findUnique({
+      where: { id: reportId },
+      select: { id: true, status: true },
+    });
+    if (!report) {
+      return res.status(404).json({ error: 'Review report not found.' });
+    }
+    if (!EDITABLE_REPORT_STATUSES.has(report.status)) {
+      return res.status(409).json({
+        error: `Molecule edits are not allowed while the report is in status "${report.status}".`,
+      });
+    }
+
+    const existing = await prisma.moleculeResult.findFirst({
+      where: { id: moleculeId, lab_report_id: reportId },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Molecule row not found for this report.' });
+    }
+
+    const data: Prisma.MoleculeResultUpdateInput = {};
+
+    if ('molecule_name' in body) {
+      const v = body.molecule_name;
+      if (typeof v !== 'string' || !v.trim()) {
+        return res.status(400).json({ error: 'molecule_name must be a non-empty string when provided.' });
+      }
+      data.molecule_name = v.trim();
+    }
+
+    const optionalStringKeys = [
+      'cas_number',
+      'result',
+      'unit',
+      'reporting_limit',
+      'method_detection_limit',
+      'specification_limit',
+      'method',
+      'status',
+      'notes',
+    ] as const;
+    for (const key of optionalStringKeys) {
+      if (key in body) {
+        const v = (body as Record<string, unknown>)[key];
+        if (v === null || v === undefined) {
+          data[key] = null;
+        } else if (typeof v === 'string') {
+          const t = v.trim();
+          data[key] = t.length ? t : null;
+        } else {
+          return res.status(400).json({ error: `Invalid type for ${key}.` });
+        }
+      }
+    }
+
+    if ('numeric_result' in body) {
+      const v = (body as Record<string, unknown>).numeric_result;
+      if (v === null || v === undefined || v === '') {
+        data.numeric_result = null;
+      } else if (typeof v === 'number' && Number.isFinite(v)) {
+        data.numeric_result = v;
+      } else if (typeof v === 'string') {
+        const t = v.trim();
+        if (!t.length) {
+          data.numeric_result = null;
+        } else {
+          const n = Number(t);
+          if (!Number.isFinite(n)) {
+            return res.status(400).json({ error: 'numeric_result must be a finite number or empty.' });
+          }
+          data.numeric_result = n;
+        }
+      } else {
+        return res.status(400).json({ error: 'Invalid numeric_result.' });
+      }
+    }
+
+    const boolOrNull = (val: unknown, field: string): true | false | null => {
+      if (val === null || val === undefined || val === '') return null;
+      if (typeof val === 'boolean') return val;
+      if (val === 'true') return true;
+      if (val === 'false') return false;
+      throw new Error(field);
+    };
+
+    try {
+      if ('is_detected' in body) {
+        data.is_detected = boolOrNull((body as Record<string, unknown>).is_detected, 'is_detected');
+      }
+      if ('is_compliant' in body) {
+        data.is_compliant = boolOrNull((body as Record<string, unknown>).is_compliant, 'is_compliant');
+      }
+    } catch {
+      return res.status(400).json({ error: 'is_detected and is_compliant must be boolean, null, or "true"/"false".' });
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update.' });
+    }
+
+    const updated = await prisma.moleculeResult.update({
+      where: { id: moleculeId },
+      data,
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const report = await prisma.labReport.findUnique({
@@ -107,6 +231,18 @@ router.get('/:id', async (req, res) => {
         moleculeResults: {
           orderBy: { createdAt: 'asc' },
         },
+        complianceChecks: {
+          include: {
+            standard: true,
+            moleculeResults: {
+              include: {
+                moleculeResult: true,
+                molecule: true,
+              },
+            },
+          },
+          orderBy: { checked_at: 'desc' },
+        },
       },
     });
 
@@ -117,6 +253,95 @@ router.get('/:id', async (req, res) => {
     res.json(serializeReport(report));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:id/complete-review', async (req, res) => {
+  try {
+    const { notes } = req.body || {};
+    const report = await prisma.labReport.findUnique({
+      where: { id: req.params.id },
+      include: { test: true },
+    });
+
+    if (!report) {
+      return res.status(404).json({ error: 'Review report not found.' });
+    }
+    if (!report.test_id) {
+      return res.status(409).json({ error: 'Map this report to a test before completing molecule review.' });
+    }
+    if (!['PENDING_REVIEW', 'COMPLIANCE_PENDING'].includes(report.status)) {
+      return res.status(409).json({
+        error: `Report is in status "${report.status}" and cannot be moved to compliance review.`,
+      });
+    }
+
+    const [updatedReport, updatedTest] = await prisma.$transaction([
+      prisma.labReport.update({
+        where: { id: report.id },
+        data: {
+          status: 'COMPLIANCE_PENDING',
+          review_notes: typeof notes === 'string' ? notes : report.review_notes,
+          reviewed_at: new Date(),
+        },
+      }),
+      prisma.test.update({
+        where: { id: report.test_id },
+        data: { status: 'COMPLIANCE_PENDING' },
+      }),
+    ]);
+
+    res.json({ success: true, report: updatedReport, test: updatedTest });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:id/compliance/:standardId/preview', async (req, res) => {
+  try {
+    const preview = await buildCompliancePreview(prisma, req.params.id, req.params.standardId);
+    res.json(preview);
+  } catch (error: any) {
+    const status = /not found/i.test(error.message) ? 404 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+router.post('/:id/compliance/:standardId/agree', async (req, res) => {
+  try {
+    const { notes } = req.body || {};
+    const report = await prisma.labReport.findUnique({
+      where: { id: req.params.id },
+      include: { test: true },
+    });
+    if (!report) {
+      return res.status(404).json({ error: 'Review report not found.' });
+    }
+    if (!report.test_id) {
+      return res.status(409).json({ error: 'Map this report to a test before recording compliance.' });
+    }
+    if (!['COMPLIANCE_PENDING', 'APPROVED'].includes(report.status)) {
+      return res.status(409).json({
+        error: `Complete molecule review before recording compliance. Current status: "${report.status}".`,
+      });
+    }
+
+    const check = await recordComplianceAgreement(
+      prisma,
+      req.params.id,
+      req.params.standardId,
+      typeof notes === 'string' && notes.trim() ? notes.trim() : null
+    );
+
+    await prisma.test.update({
+      where: { id: report.test_id },
+      data: { status: 'COMPLETED' },
+    });
+
+    res.json({ success: true, check });
+  } catch (error: any) {
+    const status = /not found/i.test(error.message) ? 404 : 500;
+    res.status(status).json({ error: error.message });
   }
 });
 

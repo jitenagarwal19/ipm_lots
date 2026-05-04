@@ -32,11 +32,12 @@ model LabContact {
 }
 
 model Product {
-  id        String   @id @default(uuid())
-  name      String
-  lots      Lot[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String            @id @default(uuid())
+  name             String
+  lots             Lot[]
+  complianceLimits ComplianceLimit[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
 model Variant {
@@ -94,27 +95,25 @@ model Lot {
   updatedAt  DateTime @updatedAt
 }
 
-
-
 model Test {
-  id                    String     @id @default(uuid())
-  lot_id                String
-  lot                   Lot        @relation(fields: [lot_id], references: [id])
-  lab_id                String
-  lab                   Lab        @relation(fields: [lab_id], references: [id])
-  test_type_id          String
-  test_type             TestType   @relation(fields: [test_type_id], references: [id])
-  vendor_id             String?
-  vendor                Vendor?    @relation(fields: [vendor_id], references: [id])
-  region                String?
-  sampled_by_staff_id   String?
-  sampled_by_staff      Staff?     @relation("SampledByStaff", fields: [sampled_by_staff_id], references: [id])
-  status                String     @default("INITIATED")
-  email_thread_id       String?
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
-  emails                Email[]
-  labReports            LabReport[]
+  id                  String      @id @default(uuid())
+  lot_id              String
+  lot                 Lot         @relation(fields: [lot_id], references: [id])
+  lab_id              String
+  lab                 Lab         @relation(fields: [lab_id], references: [id])
+  test_type_id        String
+  test_type           TestType    @relation(fields: [test_type_id], references: [id])
+  vendor_id           String?
+  vendor              Vendor?     @relation(fields: [vendor_id], references: [id])
+  region              String?
+  sampled_by_staff_id String?
+  sampled_by_staff    Staff?      @relation("SampledByStaff", fields: [sampled_by_staff_id], references: [id])
+  status              String      @default("INITIATED")
+  email_thread_id     String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  emails              Email[]
+  labReports          LabReport[]
 }
 
 model Email {
@@ -135,57 +134,155 @@ model Email {
 }
 
 model Attachment {
-  id          String   @id @default(uuid())
-  email_id    String
-  email       Email    @relation(fields: [email_id], references: [id])
+  id                String      @id @default(uuid())
+  email_id          String
+  email             Email       @relation(fields: [email_id], references: [id])
   original_filename String?
-  file_url    String   // Local path or S3 URL
-  file_type   String?
-  extracted_text String?
-  labReports LabReport[]
-  uploaded_at DateTime @default(now())
+  file_url          String // Local path or S3 URL
+  file_type         String?
+  extracted_text    String?
+  labReports        LabReport[]
+  uploaded_at       DateTime    @default(now())
 }
 
 model LabReport {
-  id                         String           @id @default(uuid())
+  id                         String                     @id @default(uuid())
   email_id                   String
-  email                      Email            @relation(fields: [email_id], references: [id])
+  email                      Email                      @relation(fields: [email_id], references: [id])
   test_id                    String?
-  test                       Test?            @relation(fields: [test_id], references: [id])
+  test                       Test?                      @relation(fields: [test_id], references: [id])
   attachment_id              String?
-  attachment                 Attachment?      @relation(fields: [attachment_id], references: [id])
+  attachment                 Attachment?                @relation(fields: [attachment_id], references: [id])
   lot_number                 String?
-  source_type                String           @default("UNKNOWN")
+  source_type                String                     @default("UNKNOWN")
   source_attachment_filename String?
-  status                     String           @default("PENDING_REVIEW")
+  status                     String                     @default("PENDING_REVIEW")
   metadata_json              String?
   results_json               String?
   raw_ai_json                String
   review_notes               String?
   reviewed_at                DateTime?
-  createdAt                  DateTime         @default(now())
-  updatedAt                  DateTime         @updatedAt
+  createdAt                  DateTime                   @default(now())
+  updatedAt                  DateTime                   @updatedAt
   moleculeResults            MoleculeResult[]
+  complianceChecks           LabReportComplianceCheck[]
 }
 
 model MoleculeResult {
-  id                      String    @id @default(uuid())
-  lab_report_id           String
-  labReport               LabReport @relation(fields: [lab_report_id], references: [id])
-  molecule_name           String
-  cas_number              String?
-  result                  String?
-  numeric_result          Float?
-  unit                    String?
-  reporting_limit         String?
-  method_detection_limit  String?
-  specification_limit     String?
-  method                  String?
-  status                  String?
-  is_detected             Boolean?
-  is_compliant            Boolean?
-  notes                   String?
-  createdAt               DateTime  @default(now())
+  id                     String                              @id @default(uuid())
+  lab_report_id          String
+  labReport              LabReport                           @relation(fields: [lab_report_id], references: [id])
+  molecule_id            String?
+  molecule               Molecule?                           @relation(fields: [molecule_id], references: [id])
+  molecule_name          String
+  cas_number             String?
+  result                 String?
+  numeric_result         Float?
+  unit                   String?
+  reporting_limit        String?
+  method_detection_limit String?
+  specification_limit    String?
+  method                 String?
+  status                 String?
+  is_detected            Boolean?
+  is_compliant           Boolean?
+  notes                  String?
+  createdAt              DateTime                            @default(now())
+  complianceResults      LabReportComplianceMoleculeResult[]
+}
+
+model Molecule {
+  id                String                              @id @default(uuid())
+  name              String
+  normalized_name   String                              @unique
+  cas_number        String?
+  is_active         Boolean                             @default(true)
+  aliases           MoleculeAlias[]
+  moleculeResults   MoleculeResult[]
+  complianceLimits  ComplianceLimit[]
+  complianceResults LabReportComplianceMoleculeResult[]
+  createdAt         DateTime                            @default(now())
+  updatedAt         DateTime                            @updatedAt
+}
+
+model MoleculeAlias {
+  id               String   @id @default(uuid())
+  molecule_id      String
+  molecule         Molecule @relation(fields: [molecule_id], references: [id])
+  alias            String
+  normalized_alias String   @unique
+  source           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model ComplianceStandard {
+  id             String                     @id @default(uuid())
+  code           String                     @unique
+  name           String
+  fallback_limit Float                      @default(0.01)
+  fallback_unit  String                     @default("mg/kg")
+  is_active      Boolean                    @default(true)
+  limits         ComplianceLimit[]
+  checks         LabReportComplianceCheck[]
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+}
+
+model ComplianceLimit {
+  id          String             @id @default(uuid())
+  standard_id String
+  standard    ComplianceStandard @relation(fields: [standard_id], references: [id])
+  molecule_id String
+  molecule    Molecule           @relation(fields: [molecule_id], references: [id])
+  product_id  String?
+  product     Product?           @relation(fields: [product_id], references: [id])
+  limit_value Float
+  unit        String             @default("mg/kg")
+  notes       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([standard_id, molecule_id, product_id])
+}
+
+model LabReportComplianceCheck {
+  id              String                              @id @default(uuid())
+  lab_report_id   String
+  labReport       LabReport                           @relation(fields: [lab_report_id], references: [id])
+  standard_id     String
+  standard        ComplianceStandard                  @relation(fields: [standard_id], references: [id])
+  status          String                              @default("PENDING")
+  is_compliant    Boolean?
+  notes           String?
+  checked_at      DateTime?
+  createdAt       DateTime                            @default(now())
+  updatedAt       DateTime                            @updatedAt
+  moleculeResults LabReportComplianceMoleculeResult[]
+
+  @@unique([lab_report_id, standard_id])
+}
+
+model LabReportComplianceMoleculeResult {
+  id                  String                   @id @default(uuid())
+  compliance_check_id String
+  complianceCheck     LabReportComplianceCheck @relation(fields: [compliance_check_id], references: [id])
+  molecule_result_id  String
+  moleculeResult      MoleculeResult           @relation(fields: [molecule_result_id], references: [id])
+  molecule_id         String?
+  molecule            Molecule?                @relation(fields: [molecule_id], references: [id])
+  measured_value      Float?
+  measured_unit       String?
+  limit_value         Float
+  limit_unit          String
+  limit_source        String
+  fallback_used       Boolean                  @default(false)
+  is_detected         Boolean?
+  is_compliant        Boolean?
+  notes               String?
+  createdAt           DateTime                 @default(now())
+
+  @@unique([compliance_check_id, molecule_result_id])
 }
 
 model SystemSetting {

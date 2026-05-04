@@ -19,13 +19,28 @@ router.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const tests = yield prisma.test.findMany({
             include: {
-                lot: true,
+                lot: {
+                    include: {
+                        product: true,
+                    },
+                },
                 lab: true,
                 test_type: true,
+                vendor: true,
+                sampled_by_staff: true,
                 labReports: {
-                    where: { status: 'PENDING_REVIEW' },
                     orderBy: { createdAt: 'desc' },
-                    take: 1,
+                    take: 10,
+                    include: {
+                        moleculeResults: {
+                            orderBy: { molecule_name: 'asc' },
+                            take: 50,
+                        },
+                        complianceChecks: {
+                            include: { standard: true },
+                            orderBy: { checked_at: 'desc' },
+                        },
+                    },
                 },
             },
         });
@@ -50,6 +65,8 @@ router.get('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 },
                 lab: true,
                 test_type: true,
+                vendor: true,
+                sampled_by_staff: true,
                 emails: {
                     orderBy: { received_at: 'desc' },
                     include: {
@@ -61,6 +78,18 @@ router.get('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                     include: {
                         attachment: true,
                         moleculeResults: true,
+                        complianceChecks: {
+                            include: {
+                                standard: true,
+                                moleculeResults: {
+                                    include: {
+                                        moleculeResult: true,
+                                        molecule: true,
+                                    },
+                                },
+                            },
+                            orderBy: { checked_at: 'desc' },
+                        },
                     },
                 },
             },
@@ -78,7 +107,8 @@ router.get('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
 // Create Test (and Lot if needed)
 router.post('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g;
-    const { lot_number, product_id, variant_id, company_id, lab_id, test_type_id } = req.body;
+    const { lot_number, product_id, variant_id, company_id, lab_id, test_type_id, send_email: sendEmailBody, vendor_id, region, sampled_by_staff_id, } = req.body;
+    const sendEmail = sendEmailBody !== false;
     try {
         // Upsert the Lot
         let lot = yield prisma.lot.findUnique({ where: { lot_number } });
@@ -92,20 +122,29 @@ router.post('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 },
             });
         }
+        const testCreateData = {
+            lot_id: lot.id,
+            lab_id,
+            test_type_id,
+            status: 'INITIATED',
+            vendor_id: vendor_id || null,
+            region: typeof region === 'string' && region.trim() ? region.trim() : null,
+            sampled_by_staff_id: sampled_by_staff_id || null,
+        };
         // Create Test
         const test = yield prisma.test.create({
-            data: {
-                lot_id: lot.id,
-                lab_id,
-                test_type_id,
-                status: 'INITIATED',
-            },
+            data: testCreateData,
             include: {
                 lot: true,
                 lab: { include: { contacts: true } },
-                test_type: true
+                test_type: true,
+                vendor: true,
+                sampled_by_staff: true,
             }
         });
+        if (!sendEmail) {
+            return res.json(test);
+        }
         try {
             const labEmail = ((_c = (_b = (_a = test.lab) === null || _a === void 0 ? void 0 : _a.contacts) === null || _b === void 0 ? void 0 : _b.find(c => c.is_primary)) === null || _c === void 0 ? void 0 : _c.email) || ((_f = (_e = (_d = test.lab) === null || _d === void 0 ? void 0 : _d.contacts) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.email);
             if (!labEmail) {
@@ -119,7 +158,14 @@ router.post('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 data: {
                     status: 'AWAITING_REPORT',
                     email_thread_id: emailResult.threadId
-                }
+                },
+                include: {
+                    lot: true,
+                    lab: { include: { contacts: true } },
+                    test_type: true,
+                    vendor: true,
+                    sampled_by_staff: true,
+                },
             });
             // Log the sent email
             yield prisma.email.create({

@@ -27,6 +27,10 @@ router.get('/', async (req, res) => {
               orderBy: { molecule_name: 'asc' },
               take: 50,
             },
+            complianceChecks: {
+              include: { standard: true },
+              orderBy: { checked_at: 'desc' },
+            },
           },
         },
       },
@@ -65,6 +69,18 @@ router.get('/:id', async (req, res) => {
           include: {
             attachment: true,
             moleculeResults: true,
+            complianceChecks: {
+              include: {
+                standard: true,
+                moleculeResults: {
+                  include: {
+                    moleculeResult: true,
+                    molecule: true,
+                  },
+                },
+              },
+              orderBy: { checked_at: 'desc' },
+            },
           },
         },
       },

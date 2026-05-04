@@ -8,6 +8,7 @@
     "dev:log": "BACKEND_LOG_FILE=./backend-debug.log tsx watch src/index.ts",
     "build": "tsc",
     "gmail:auth": "tsx scripts/gmail-auth.ts",
+    "backfill:compliance-molecules": "tsx scripts/backfill-compliance-molecules.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [],
@@ -20,6 +21,7 @@
     "@types/uuid": "^10.0.0",
     "bullmq": "^5.76.2",
     "cors": "^2.8.6",
+    "csv-parse": "^6.2.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "googleapis": "^171.4.0",

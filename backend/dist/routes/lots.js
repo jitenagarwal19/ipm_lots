@@ -44,6 +44,10 @@ function inferSourceType(report, attachment) {
 }
 function mapMoleculeResult(reportId, molecule) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    const isDetected = typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isDetected) === 'boolean' ? molecule.isDetected : null;
+    const isCompliant = isDetected === false
+        ? true
+        : (typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isCompliant) === 'boolean' ? molecule.isCompliant : null);
     return {
         lab_report_id: reportId,
         molecule_name: String((molecule === null || molecule === void 0 ? void 0 : molecule.moleculeName) || (molecule === null || molecule === void 0 ? void 0 : molecule.name) || 'Unknown molecule'),
@@ -56,8 +60,8 @@ function mapMoleculeResult(reportId, molecule) {
         specification_limit: (_f = molecule === null || molecule === void 0 ? void 0 : molecule.specificationLimit) !== null && _f !== void 0 ? _f : null,
         method: (_g = molecule === null || molecule === void 0 ? void 0 : molecule.method) !== null && _g !== void 0 ? _g : null,
         status: (_h = molecule === null || molecule === void 0 ? void 0 : molecule.status) !== null && _h !== void 0 ? _h : null,
-        is_detected: typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isDetected) === 'boolean' ? molecule.isDetected : null,
-        is_compliant: typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isCompliant) === 'boolean' ? molecule.isCompliant : null,
+        is_detected: isDetected,
+        is_compliant: isCompliant,
         notes: (_j = molecule === null || molecule === void 0 ? void 0 : molecule.notes) !== null && _j !== void 0 ? _j : null,
     };
 }
@@ -141,6 +145,18 @@ router.get('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                             include: {
                                 attachment: true,
                                 moleculeResults: true,
+                                complianceChecks: {
+                                    include: {
+                                        standard: true,
+                                        moleculeResults: {
+                                            include: {
+                                                moleculeResult: true,
+                                                molecule: true,
+                                            },
+                                        },
+                                    },
+                                    orderBy: { checked_at: 'desc' },
+                                },
                             },
                         },
                     },

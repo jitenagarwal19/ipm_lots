@@ -27,6 +27,16 @@ type TestRow = {
   labReports?: {
     id: string;
     status: string;
+    complianceChecks?: {
+      id: string;
+      status: string;
+      is_compliant?: boolean | null;
+      checked_at?: string | null;
+      standard?: {
+        code?: string | null;
+        name?: string | null;
+      } | null;
+    }[];
     moleculeResults?: {
       id: string;
       molecule_name: string;
@@ -105,7 +115,17 @@ export default function TestsPage() {
   }
 
   function pendingReviewReport(test: TestRow) {
-    return test.labReports?.find((r) => r.status === "PENDING_REVIEW");
+    return test.labReports?.find((r) => r.status === "PENDING_REVIEW" || r.status === "COMPLIANCE_PENDING");
+  }
+
+  function complianceSummary(test: TestRow) {
+    const checks = (test.labReports || []).flatMap((r) => r.complianceChecks || []);
+    if (checks.length === 0) return [];
+    return checks.slice(0, 3).map((check) => ({
+      id: check.id,
+      label: check.standard?.name || check.standard?.code || "Compliance",
+      status: check.status,
+    }));
   }
 
   const getStatusStyle = (status: string) => {
@@ -114,6 +134,7 @@ export default function TestsPage() {
       case 'AWAITING_REPORT': return 'bg-blue-500/10 text-blue-400';
       case 'REPORT_RECEIVED': return 'bg-purple-500/10 text-purple-400';
       case 'UNDER_REVIEW': return 'bg-amber-500/10 text-amber-400';
+      case 'COMPLIANCE_PENDING': return 'bg-orange-500/10 text-orange-400';
       case 'COMPLETED': return 'bg-emerald-500/10 text-emerald-400';
       default: return 'bg-zinc-500/10 text-zinc-400';
     }
@@ -151,23 +172,25 @@ export default function TestsPage() {
                 <TableHead className="text-zinc-400">Test type</TableHead>
                 <TableHead className="text-zinc-400">Lab</TableHead>
                 <TableHead className="text-zinc-400">Status</TableHead>
+                <TableHead className="text-zinc-400">Compliance</TableHead>
                 <TableHead className="text-zinc-400">Review</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-zinc-500 py-8">Loading tests...</TableCell>
+                  <TableCell colSpan={9} className="text-center text-zinc-500 py-8">Loading tests...</TableCell>
                 </TableRow>
               ) : tests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-zinc-500 py-8">No tests initiated yet.</TableCell>
+                  <TableCell colSpan={9} className="text-center text-zinc-500 py-8">No tests initiated yet.</TableCell>
                 </TableRow>
               ) : (
                 tests.map((test) => {
                   const info = lotInfoLines(test);
                   const summary = resultSummary(test);
                   const pending = pendingReviewReport(test);
+                  const compliance = complianceSummary(test);
                   return (
                   <TableRow key={test.id} className="border-zinc-800 hover:bg-zinc-800/50 transition-colors">
                     <TableCell className="whitespace-nowrap text-zinc-400 align-top">
@@ -212,9 +235,24 @@ export default function TestsPage() {
                       </span>
                     </TableCell>
                     <TableCell className="text-zinc-300 align-top">
+                      {compliance.length > 0 ? (
+                        <div className="flex max-w-[14rem] flex-wrap gap-1">
+                          {compliance.map((check) => (
+                            <span key={check.id} className="inline-flex rounded-full border border-emerald-500/30 px-2 py-0.5 text-[10px] text-emerald-400">
+                              {check.label}: {check.status}
+                            </span>
+                          ))}
+                        </div>
+                      ) : test.status === "COMPLIANCE_PENDING" ? (
+                        <span className="text-amber-400 text-sm">Pending</span>
+                      ) : (
+                        <span className="text-zinc-600">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-zinc-300 align-top">
                       {pending ? (
                         <Link href={`/reviews/${pending.id}`} className="text-amber-400 hover:underline text-sm">
-                          Review report
+                          {pending.status === "COMPLIANCE_PENDING" ? "Check compliance" : "Review report"}
                         </Link>
                       ) : (
                         <span className="text-zinc-600">-</span>

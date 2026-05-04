@@ -151,6 +151,7 @@ export default function SettingsPage() {
           <TabsTrigger value="staff" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Staff</TabsTrigger>
           <TabsTrigger value="companies" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Companies</TabsTrigger>
           <TabsTrigger value="testtypes" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Test Types</TabsTrigger>
+          <TabsTrigger value="compliance" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Compliance</TabsTrigger>
           <TabsTrigger value="emailtracking" className="rounded-lg data-[state=active]:bg-zinc-800 data-[state=active]:text-emerald-400">Email Tracking</TabsTrigger>
         </TabsList>
 
@@ -359,6 +360,10 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="compliance" className="mt-0 outline-none">
+          <ComplianceSettings products={products} />
+        </TabsContent>
+
         {/* Email Tracking Settings */}
         <TabsContent value="emailtracking" className="mt-0 outline-none">
           <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl max-w-2xl">
@@ -388,6 +393,303 @@ export default function SettingsPage() {
         </TabsContent>
 
       </Tabs>
+    </div>
+  );
+}
+
+function ComplianceSettings({ products }: { products: any[] }) {
+  const [molecules, setMolecules] = useState<any[]>([]);
+  const [aliases, setAliases] = useState<any[]>([]);
+  const [standards, setStandards] = useState<any[]>([]);
+  const [limits, setLimits] = useState<any[]>([]);
+  const [message, setMessage] = useState("");
+
+  const [moleculeEditId, setMoleculeEditId] = useState<string | null>(null);
+  const [moleculeName, setMoleculeName] = useState("");
+  const [moleculeCas, setMoleculeCas] = useState("");
+
+  const [aliasEditId, setAliasEditId] = useState<string | null>(null);
+  const [aliasMoleculeId, setAliasMoleculeId] = useState("");
+  const [aliasName, setAliasName] = useState("");
+  const [aliasSource, setAliasSource] = useState("");
+
+  const [standardEditId, setStandardEditId] = useState<string | null>(null);
+  const [standardCode, setStandardCode] = useState("");
+  const [standardName, setStandardName] = useState("");
+  const [fallbackLimit, setFallbackLimit] = useState("0.01");
+  const [fallbackUnit, setFallbackUnit] = useState("mg/kg");
+
+  const [limitEditId, setLimitEditId] = useState<string | null>(null);
+  const [limitStandardId, setLimitStandardId] = useState("");
+  const [limitMoleculeId, setLimitMoleculeId] = useState("");
+  const [limitProductId, setLimitProductId] = useState("");
+  const [limitValue, setLimitValue] = useState("");
+  const [limitUnit, setLimitUnit] = useState("mg/kg");
+  const [limitNotes, setLimitNotes] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  const loadCompliance = async () => {
+    const [m, a, s, l] = await Promise.all([
+      fetch(`${API_BASE_URL}/molecules`).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/molecule-aliases`).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/compliance-standards`).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/compliance-limits`).then((r) => r.json()),
+    ]);
+    setMolecules(m);
+    setAliases(a);
+    setStandards(s);
+    setLimits(l);
+  };
+
+  useEffect(() => {
+    void loadCompliance();
+  }, []);
+
+  async function saveJson(endpoint: string, editId: string | null, data: Record<string, unknown>, onDone: () => void) {
+    const res = await fetch(`${API_BASE_URL}/${endpoint}${editId ? `/${editId}` : ""}`, {
+      method: editId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    const payload = await res.json();
+    if (!res.ok) {
+      throw new Error(payload.error || "Failed to save.");
+    }
+    onDone();
+    await loadCompliance();
+    setMessage("Saved.");
+  }
+
+  const resetMolecule = () => {
+    setMoleculeEditId(null);
+    setMoleculeName("");
+    setMoleculeCas("");
+  };
+
+  const resetAlias = () => {
+    setAliasEditId(null);
+    setAliasMoleculeId("");
+    setAliasName("");
+    setAliasSource("");
+  };
+
+  const resetStandard = () => {
+    setStandardEditId(null);
+    setStandardCode("");
+    setStandardName("");
+    setFallbackLimit("0.01");
+    setFallbackUnit("mg/kg");
+  };
+
+  const resetLimit = () => {
+    setLimitEditId(null);
+    setLimitStandardId("");
+    setLimitMoleculeId("");
+    setLimitProductId("");
+    setLimitValue("");
+    setLimitUnit("mg/kg");
+    setLimitNotes("");
+  };
+
+  const handleImport = async (file: File | null) => {
+    if (!file) return;
+    setImporting(true);
+    setMessage("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_BASE_URL}/compliance-limits/import`, { method: "POST", body: form });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "Import failed.");
+      await loadCompliance();
+      setMessage(`Imported ${payload.imported || 0} limit rows${payload.errors?.length ? ` with ${payload.errors.length} skipped rows` : ""}.`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {message && <p className="text-sm text-emerald-400">{message}</p>}
+
+      <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
+        <CardHeader>
+          <CardTitle className="text-white">CSV Import</CardTitle>
+          <CardDescription className="text-zinc-400">
+            Upload columns like standard_code, standard_name, molecule_name, aliases, product_name, limit_value, unit, fallback_limit.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Input
+            type="file"
+            accept=".csv,text/csv"
+            disabled={importing}
+            onChange={(e) => void handleImport(e.target.files?.[0] ?? null)}
+            className="max-w-md bg-zinc-950 border-zinc-700 text-zinc-200"
+          />
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="text-white">Molecules</CardTitle>
+            <CardDescription className="text-zinc-400">Canonical molecule master data used for all standards.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form
+              className="grid gap-3 sm:grid-cols-[1fr_10rem_auto]"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await saveJson("molecules", moleculeEditId, { name: moleculeName, cas_number: moleculeCas }, resetMolecule);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Failed to save molecule.");
+                }
+              }}
+            >
+              <Input value={moleculeName} onChange={(e) => setMoleculeName(e.target.value)} placeholder="Molecule name" required className="bg-zinc-950 border-zinc-700" />
+              <Input value={moleculeCas} onChange={(e) => setMoleculeCas(e.target.value)} placeholder="CAS number" className="bg-zinc-950 border-zinc-700" />
+              <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">{moleculeEditId ? "Update" : "Add"}</Button>
+            </form>
+            <Table>
+              <TableHeader><TableRow className="border-zinc-800"><TableHead className="text-zinc-400">Name</TableHead><TableHead className="text-zinc-400">CAS</TableHead><TableHead /></TableRow></TableHeader>
+              <TableBody>
+                {molecules.slice(0, 8).map((m) => (
+                  <TableRow key={m.id} className="border-zinc-800">
+                    <TableCell className="text-zinc-200">{m.name}</TableCell>
+                    <TableCell className="text-zinc-400">{m.cas_number || "-"}</TableCell>
+                    <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => { setMoleculeEditId(m.id); setMoleculeName(m.name); setMoleculeCas(m.cas_number || ""); }} className="text-blue-400">Edit</Button></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
+          <CardHeader>
+            <CardTitle className="text-white">Alternative Names</CardTitle>
+            <CardDescription className="text-zinc-400">Map lab-specific names back to a canonical molecule.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form
+              className="grid gap-3 sm:grid-cols-[1fr_1fr_8rem_auto]"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await saveJson("molecule-aliases", aliasEditId, { molecule_id: aliasMoleculeId, alias: aliasName, source: aliasSource }, resetAlias);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Failed to save alias.");
+                }
+              }}
+            >
+              <select value={aliasMoleculeId} onChange={(e) => setAliasMoleculeId(e.target.value)} required className="rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100">
+                <option value="">Molecule</option>
+                {molecules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <Input value={aliasName} onChange={(e) => setAliasName(e.target.value)} placeholder="Alias" required className="bg-zinc-950 border-zinc-700" />
+              <Input value={aliasSource} onChange={(e) => setAliasSource(e.target.value)} placeholder="Source" className="bg-zinc-950 border-zinc-700" />
+              <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">{aliasEditId ? "Update" : "Add"}</Button>
+            </form>
+            <Table>
+              <TableHeader><TableRow className="border-zinc-800"><TableHead className="text-zinc-400">Alias</TableHead><TableHead className="text-zinc-400">Molecule</TableHead><TableHead /></TableRow></TableHeader>
+              <TableBody>
+                {aliases.slice(0, 8).map((a) => (
+                  <TableRow key={a.id} className="border-zinc-800">
+                    <TableCell className="text-zinc-200">{a.alias}</TableCell>
+                    <TableCell className="text-zinc-400">{a.molecule?.name || "-"}</TableCell>
+                    <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => { setAliasEditId(a.id); setAliasMoleculeId(a.molecule_id); setAliasName(a.alias); setAliasSource(a.source || ""); }} className="text-blue-400">Edit</Button></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
+        <CardHeader>
+          <CardTitle className="text-white">Compliance Standards</CardTitle>
+          <CardDescription className="text-zinc-400">Configured dropdown options and fallback limits.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form
+            className="grid gap-3 md:grid-cols-[8rem_1fr_8rem_8rem_auto]"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await saveJson("compliance-standards", standardEditId, { code: standardCode, name: standardName, fallback_limit: fallbackLimit, fallback_unit: fallbackUnit }, resetStandard);
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "Failed to save standard.");
+              }
+            }}
+          >
+            <Input value={standardCode} onChange={(e) => setStandardCode(e.target.value)} placeholder="Code" required className="bg-zinc-950 border-zinc-700" />
+            <Input value={standardName} onChange={(e) => setStandardName(e.target.value)} placeholder="Display name" required className="bg-zinc-950 border-zinc-700" />
+            <Input value={fallbackLimit} onChange={(e) => setFallbackLimit(e.target.value)} placeholder="0.01" required className="bg-zinc-950 border-zinc-700" />
+            <Input value={fallbackUnit} onChange={(e) => setFallbackUnit(e.target.value)} placeholder="mg/kg" required className="bg-zinc-950 border-zinc-700" />
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">{standardEditId ? "Update" : "Add"}</Button>
+          </form>
+          <Table>
+            <TableHeader><TableRow className="border-zinc-800"><TableHead className="text-zinc-400">Code</TableHead><TableHead className="text-zinc-400">Name</TableHead><TableHead className="text-zinc-400">Fallback</TableHead><TableHead /></TableRow></TableHeader>
+            <TableBody>
+              {standards.map((s) => (
+                <TableRow key={s.id} className="border-zinc-800">
+                  <TableCell className="text-zinc-200">{s.code}</TableCell>
+                  <TableCell className="text-zinc-200">{s.name}</TableCell>
+                  <TableCell className="text-zinc-400">{s.fallback_limit} {s.fallback_unit}</TableCell>
+                  <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => { setStandardEditId(s.id); setStandardCode(s.code); setStandardName(s.name); setFallbackLimit(String(s.fallback_limit)); setFallbackUnit(s.fallback_unit); }} className="text-blue-400">Edit</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
+        <CardHeader>
+          <CardTitle className="text-white">Compliance Limits</CardTitle>
+          <CardDescription className="text-zinc-400">Product blank means the limit applies to all products for that standard.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form
+            className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_7rem_7rem_1fr_auto]"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await saveJson("compliance-limits", limitEditId, { standard_id: limitStandardId, molecule_id: limitMoleculeId, product_id: limitProductId, limit_value: limitValue, unit: limitUnit, notes: limitNotes }, resetLimit);
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "Failed to save limit.");
+              }
+            }}
+          >
+            <select value={limitStandardId} onChange={(e) => setLimitStandardId(e.target.value)} required className="rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"><option value="">Standard</option>{standards.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+            <select value={limitMoleculeId} onChange={(e) => setLimitMoleculeId(e.target.value)} required className="rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"><option value="">Molecule</option>{molecules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+            <select value={limitProductId} onChange={(e) => setLimitProductId(e.target.value)} className="rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"><option value="">All products</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+            <Input value={limitValue} onChange={(e) => setLimitValue(e.target.value)} placeholder="Limit" required className="bg-zinc-950 border-zinc-700" />
+            <Input value={limitUnit} onChange={(e) => setLimitUnit(e.target.value)} placeholder="Unit" required className="bg-zinc-950 border-zinc-700" />
+            <Input value={limitNotes} onChange={(e) => setLimitNotes(e.target.value)} placeholder="Notes" className="bg-zinc-950 border-zinc-700" />
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">{limitEditId ? "Update" : "Add"}</Button>
+          </form>
+          <Table>
+            <TableHeader><TableRow className="border-zinc-800"><TableHead className="text-zinc-400">Standard</TableHead><TableHead className="text-zinc-400">Molecule</TableHead><TableHead className="text-zinc-400">Product</TableHead><TableHead className="text-zinc-400">Limit</TableHead><TableHead /></TableRow></TableHeader>
+            <TableBody>
+              {limits.slice(0, 20).map((l) => (
+                <TableRow key={l.id} className="border-zinc-800">
+                  <TableCell className="text-zinc-200">{l.standard?.name || "-"}</TableCell>
+                  <TableCell className="text-zinc-200">{l.molecule?.name || "-"}</TableCell>
+                  <TableCell className="text-zinc-400">{l.product?.name || "All products"}</TableCell>
+                  <TableCell className="text-zinc-400">{l.limit_value} {l.unit}</TableCell>
+                  <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => { setLimitEditId(l.id); setLimitStandardId(l.standard_id); setLimitMoleculeId(l.molecule_id); setLimitProductId(l.product_id || ""); setLimitValue(String(l.limit_value)); setLimitUnit(l.unit); setLimitNotes(l.notes || ""); }} className="text-blue-400">Edit</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

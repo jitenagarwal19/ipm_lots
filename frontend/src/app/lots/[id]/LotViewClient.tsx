@@ -41,6 +41,13 @@ type LabReport = {
   source_type: string;
   source_attachment_filename?: string | null;
   moleculeResults?: MoleculeResult[];
+  complianceChecks?: ComplianceCheck[];
+};
+
+type ComplianceCheck = {
+  id: string;
+  status: string;
+  standard?: { name?: string | null; code?: string | null } | null;
 };
 
 type LotTest = {
@@ -75,6 +82,8 @@ function getStatusStyle(status: string) {
       return "text-blue-400 border-blue-500/20";
     case "UNDER_REVIEW":
       return "text-amber-400 border-amber-500/20";
+    case "COMPLIANCE_PENDING":
+      return "text-orange-400 border-orange-500/20";
     case "COMPLETED":
       return "text-emerald-400 border-emerald-500/20";
     default:
@@ -217,6 +226,11 @@ export default function LotViewClient() {
                                       {report.status} | {report.moleculeResults?.length || 0} molecules
                                     </Link>
                                     <div className="flex flex-wrap gap-1">
+                                      {(report.complianceChecks || []).map((check) => (
+                                        <Badge key={check.id} variant="outline" className="border-emerald-500/30 text-emerald-400">
+                                          {check.standard?.name || check.standard?.code || "Compliance"}: {check.status}
+                                        </Badge>
+                                      ))}
                                       {detectedMolecules.length > 0 ? (
                                         detectedMolecules.slice(0, 6).map((molecule) => (
                                           <Badge key={molecule.id} variant="outline" className={molecule.is_compliant === false ? "border-red-500/30 text-red-400" : "border-amber-500/30 text-amber-400"}>
