@@ -77,6 +77,56 @@ function formatValue(value: unknown) {
   return String(value);
 }
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Collapse duplicated unit tokens from extraction (e.g. "mg/kg mg/kg" in the unit field). */
+function normalizeUnitTokens(unit: string): string {
+  const parts = unit.trim().split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) {
+    if (out.length && out[out.length - 1].toLowerCase() === p.toLowerCase()) continue;
+    out.push(p);
+  }
+  return out.join(" ");
+}
+
+/** Remove repeated trailing copies of the same unit (e.g. "0.010 mg/kg mg/kg"). */
+function collapseTrailingRepeatedUnit(display: string, unit: string): string {
+  const u = unit.trim();
+  if (!u) return display;
+  const token = escapeRegExp(u);
+  const re = new RegExp(`(?:\\s+${token})+$`, "i");
+  const s = display.trim();
+  const match = s.match(re);
+  if (!match || match.index === undefined) return display;
+  const base = s.slice(0, match.index).trimEnd();
+  return base ? `${base} ${u}` : u;
+}
+
+function formatMoleculeResult(molecule: MoleculeResult) {
+  const unit = normalizeUnitTokens((molecule.unit ?? "").trim());
+  const result = (molecule.result ?? "").trim();
+  const numeric = molecule.numeric_result;
+
+  let display: string;
+
+  if (result.length > 0) {
+    if (unit && !result.toLowerCase().includes(unit.toLowerCase())) {
+      display = `${result} ${unit}`;
+    } else {
+      display = result;
+    }
+  } else if (typeof numeric === "number" && Number.isFinite(numeric)) {
+    display = unit ? `${numeric} ${unit}` : String(numeric);
+  } else {
+    return "-";
+  }
+
+  return unit ? collapseTrailingRepeatedUnit(display, unit) : display;
+}
+
 function isDetectedMolecule(molecule: MoleculeResult) {
   if (molecule.is_detected === true) return true;
   if (molecule.is_detected === false) return false;
@@ -175,7 +225,7 @@ export default function ReviewDetailClient() {
         </Button>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
         <div className="space-y-6">
           <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
             <CardHeader>
@@ -212,46 +262,66 @@ export default function ReviewDetailClient() {
             </CardContent>
           </Card>
 
-          <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
-            <CardHeader>
-              <CardTitle className="text-white">Molecules Fetched</CardTitle>
-              <CardDescription className="text-zinc-400">Every molecule/analyte row extracted by AI.</CardDescription>
+          <Card size="sm" className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-white text-sm">Molecules Fetched</CardTitle>
+              <CardDescription className="text-zinc-400 text-xs">Every molecule/analyte row extracted by AI.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-0">
               <div className="rounded-md border border-zinc-800 overflow-x-auto">
-                <Table>
+                <Table className="text-xs">
                   <TableHeader>
                     <TableRow className="border-zinc-800 hover:bg-transparent">
-                      <TableHead className="text-zinc-400">Molecule</TableHead>
-	                      <TableHead className="text-zinc-400">Result</TableHead>
-	                      <TableHead className="text-zinc-400">Limit</TableHead>
-	                      <TableHead className="text-zinc-400">Status</TableHead>
-	                      <TableHead className="text-zinc-400">Detected</TableHead>
-	                      <TableHead className="text-zinc-400">Compliant</TableHead>
-	                    </TableRow>
-	                  </TableHeader>
-	                  <TableBody>
-	                    {(report.moleculeResults || []).length === 0 ? (
-	                      <TableRow>
-	                        <TableCell colSpan={6} className="text-center text-zinc-500 py-8">No molecule rows were extracted.</TableCell>
-	                      </TableRow>
-	                    ) : (
-	                      report.moleculeResults?.map((molecule) => (
+                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Molecule</TableHead>
+                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Result</TableHead>
+                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Limit</TableHead>
+                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Detected</TableHead>
+                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Compliant</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(report.moleculeResults || []).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-zinc-500 py-6">
+                          No molecule rows were extracted.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      report.moleculeResults?.map((molecule) => (
                         <TableRow key={molecule.id} className="border-zinc-800 hover:bg-zinc-800/50">
-                          <TableCell className="text-zinc-100">
-                            <div className="font-medium">{molecule.molecule_name}</div>
-                            {molecule.cas_number && <div className="text-xs text-zinc-500">{molecule.cas_number}</div>}
+                          <TableCell className="py-1.5 px-2 text-zinc-100 align-top whitespace-normal max-w-[12rem]">
+                            <span className="font-medium leading-snug">{molecule.molecule_name}</span>
+                            {molecule.cas_number && (
+                              <span className="text-zinc-500"> · {molecule.cas_number}</span>
+                            )}
                           </TableCell>
-	                          <TableCell className="text-zinc-300">{molecule.result || formatValue(molecule.numeric_result)} {molecule.unit || ""}</TableCell>
-	                          <TableCell className="text-zinc-400">{molecule.specification_limit || molecule.reporting_limit || "-"}</TableCell>
-	                          <TableCell className="text-zinc-300">{molecule.status || "-"}</TableCell>
-	                          <TableCell>
-	                            <Badge variant="outline" className={isDetectedMolecule(molecule) ? "border-amber-500/30 text-amber-400" : "border-zinc-700 text-zinc-400"}>
-	                              {isDetectedMolecule(molecule) ? "Detected" : "Not detected"}
-	                            </Badge>
-	                          </TableCell>
-	                          <TableCell>
-                            <Badge variant="outline" className={molecule.is_compliant === false ? "border-red-500/30 text-red-400" : "border-emerald-500/30 text-emerald-400"}>
+                          <TableCell className="py-1.5 px-2 text-zinc-300 whitespace-normal max-w-[9rem] leading-snug">
+                            {formatMoleculeResult(molecule)}
+                          </TableCell>
+                          <TableCell className="py-1.5 px-2 text-zinc-400 tabular-nums">
+                            {molecule.specification_limit || molecule.reporting_limit || "-"}
+                          </TableCell>
+                          <TableCell className="py-1.5 px-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                isDetectedMolecule(molecule)
+                                  ? "h-5 border-amber-500/30 px-1.5 text-[10px] font-normal text-amber-400"
+                                  : "h-5 border-zinc-700 px-1.5 text-[10px] font-normal text-zinc-400"
+                              }
+                            >
+                              {isDetectedMolecule(molecule) ? "Detected" : "Not detected"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-1.5 px-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                molecule.is_compliant === false
+                                  ? "h-5 border-red-500/30 px-1.5 text-[10px] font-normal text-red-400"
+                                  : "h-5 border-emerald-500/30 px-1.5 text-[10px] font-normal text-emerald-400"
+                              }
+                            >
                               {formatValue(molecule.is_compliant)}
                             </Badge>
                           </TableCell>

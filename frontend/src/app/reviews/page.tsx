@@ -14,8 +14,14 @@ type ReviewReport = {
   source_attachment_filename?: string | null;
   status: string;
   createdAt: string;
+  metadata?: Record<string, unknown> | null;
+  /** Populated by API for UNMAPPED reports when `lot_number` matches a Lot row */
+  lotMatch?: { product?: { name?: string | null } | null } | null;
   test?: {
-    lot?: { lot_number?: string | null } | null;
+    lot?: {
+      lot_number?: string | null;
+      product?: { name?: string | null } | null;
+    } | null;
     lab?: { name?: string | null } | null;
     test_type?: { name?: string | null } | null;
   } | null;
@@ -25,6 +31,16 @@ type ReviewReport = {
   } | null;
   moleculeResults?: unknown[];
 };
+
+function productDisplayName(report: ReviewReport): string {
+  const fromLot = report.test?.lot?.product?.name?.trim();
+  if (fromLot) return fromLot;
+  const fromLotMatch = report.lotMatch?.product?.name?.trim();
+  if (fromLotMatch) return fromLotMatch;
+  const sample = report.metadata?.sampleName;
+  if (typeof sample === "string" && sample.trim()) return sample.trim();
+  return "—";
+}
 
 function getApiBaseUrl() {
   return `http://${window.location.hostname}:4000/api`;
@@ -72,6 +88,7 @@ export default function ReviewsPage() {
               <TableHeader>
                 <TableRow className="border-zinc-800 hover:bg-transparent">
                   <TableHead className="text-zinc-400">Lot</TableHead>
+                  <TableHead className="text-zinc-400">Product</TableHead>
                   <TableHead className="text-zinc-400">Test</TableHead>
                   <TableHead className="text-zinc-400">Lab</TableHead>
                   <TableHead className="text-zinc-400">Source</TableHead>
@@ -83,21 +100,24 @@ export default function ReviewsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-zinc-500 py-8">Loading reviews...</TableCell>
+                    <TableCell colSpan={8} className="text-center text-zinc-500 py-8">Loading reviews...</TableCell>
                   </TableRow>
                 ) : error ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-zinc-500 py-8">{error}</TableCell>
+                    <TableCell colSpan={8} className="text-center text-zinc-500 py-8">{error}</TableCell>
                   </TableRow>
                 ) : reports.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-zinc-500 py-8">No reports are waiting for review.</TableCell>
+                    <TableCell colSpan={8} className="text-center text-zinc-500 py-8">No reports are waiting for review.</TableCell>
                   </TableRow>
                 ) : (
                   reports.map((report) => (
                     <TableRow key={report.id} className="border-zinc-800 hover:bg-zinc-800/50 transition-colors">
                       <TableCell className="text-emerald-400 font-mono text-sm">
                         {report.test?.lot?.lot_number || report.lot_number || "-"}
+                      </TableCell>
+                      <TableCell className="text-zinc-200 max-w-[200px] truncate" title={productDisplayName(report)}>
+                        {productDisplayName(report)}
                       </TableCell>
                       <TableCell className="text-zinc-200">{report.test?.test_type?.name || "Unknown"}</TableCell>
                       <TableCell className="text-zinc-400">{report.test?.lab?.name || "Unknown"}</TableCell>

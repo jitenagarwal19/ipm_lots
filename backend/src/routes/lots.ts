@@ -34,6 +34,10 @@ function inferSourceType(report: any, attachment: any) {
 }
 
 function mapMoleculeResult(reportId: string, molecule: any) {
+  const isDetected = typeof molecule?.isDetected === 'boolean' ? molecule.isDetected : null;
+  const isCompliant = isDetected === false
+    ? true
+    : (typeof molecule?.isCompliant === 'boolean' ? molecule.isCompliant : null);
   return {
     lab_report_id: reportId,
     molecule_name: String(molecule?.moleculeName || molecule?.name || 'Unknown molecule'),
@@ -46,8 +50,8 @@ function mapMoleculeResult(reportId: string, molecule: any) {
     specification_limit: molecule?.specificationLimit ?? null,
     method: molecule?.method ?? null,
     status: molecule?.status ?? null,
-    is_detected: typeof molecule?.isDetected === 'boolean' ? molecule.isDetected : null,
-    is_compliant: typeof molecule?.isCompliant === 'boolean' ? molecule.isCompliant : null,
+    is_detected: isDetected,
+    is_compliant: isCompliant,
     notes: molecule?.notes ?? null,
   };
 }

@@ -172,6 +172,17 @@ Detection rules (CRITICAL):
 - Never invent a synthetic row like "Other analysed pesticides" or "remaining analytes". Split grouped lists (e.g. "Chlorantraniliprole (0.01), Clothianidin (0.01)") into individual entries in "undetectedMolecules".
 - "extractionQuality.detectedCount" must equal moleculeResults.length. "extractionQuality.undetectedCount" must equal undetectedMolecules.length.
 
+Compliance rules (CRITICAL):
+- An analyte that was Not Detected (ND/BLQ/BDL/<LOQ/etc.) is ALWAYS compliant. Set "isCompliant": true for any undetected analyte and for "undetectedSharedDefaults".
+- For detected analytes, set "isCompliant" by comparing the numeric result against the specification limit when both are available: result <= specification limit -> true, result > specification limit -> false.
+- If a detected analyte has no specification limit you can rely on, return null for "isCompliant" instead of guessing.
+
+Limit-column mapping (CRITICAL — do not confuse these three fields):
+- "reportingLimit" = the limit of QUANTIFICATION/REPORTING. Pull this from columns labelled "LOQ", "LOR", "RL", "Reporting Limit", "Quantification Limit", "QL". This is typically the smallest value in the row (e.g. 0.01 mg/kg).
+- "specificationLimit" = the regulatory / MRL / customer SPECIFICATION the result is judged against. Pull this from columns labelled "Limit", "MRL", "Maximum Residue Limit", "Spec", "Specification", "Standard", "Acceptance Criteria". This is the value that determines pass/fail and is typically larger than the LOQ. If the report shows "Limit" alongside "LOQ", "Limit" is the specificationLimit.
+- "methodDetectionLimit" = ONLY use this when the report explicitly labels a column "MDL", "DL", "Method Detection Limit", "Detection Limit". If no such explicit column exists, leave methodDetectionLimit null. Never put an MRL / specification value here.
+- A purely numeric column header like "Limit" (with no LOQ/MDL qualifier) maps to specificationLimit, NOT methodDetectionLimit.
+
 Other rules:
 - Use null for missing or unclear values. Do not guess.
 - Top-level "lotNumber" must equal metadata.lotNumber.
