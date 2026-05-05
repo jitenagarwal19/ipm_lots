@@ -32,12 +32,13 @@ model LabContact {
 }
 
 model Product {
-  id               String            @id @default(uuid())
-  name             String
-  lots             Lot[]
-  complianceLimits ComplianceLimit[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                 String              @id @default(uuid())
+  name               String
+  lots               Lot[]
+  complianceProfiles ComplianceProfile[]
+  complianceLimits   ComplianceLimit[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model Variant {
@@ -223,14 +224,34 @@ model ComplianceStandard {
   fallback_limit Float                      @default(0.01)
   fallback_unit  String                     @default("mg/kg")
   is_active      Boolean                    @default(true)
+  profiles       ComplianceProfile[]
   limits         ComplianceLimit[]
   checks         LabReportComplianceCheck[]
   createdAt      DateTime                   @default(now())
   updatedAt      DateTime                   @updatedAt
 }
 
+model ComplianceProfile {
+  id             String                @id @default(uuid())
+  product_id     String
+  product        Product               @relation(fields: [product_id], references: [id])
+  standard_id    String
+  standard       ComplianceStandard    @relation(fields: [standard_id], references: [id])
+  fallback_limit Float                 @default(0.01)
+  fallback_unit  String                @default("mg/kg")
+  is_active      Boolean               @default(true)
+  limits         ComplianceLimit[]
+  changeLogs     ComplianceChangeLog[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([product_id, standard_id])
+}
+
 model ComplianceLimit {
   id          String             @id @default(uuid())
+  profile_id  String?
+  profile     ComplianceProfile? @relation(fields: [profile_id], references: [id])
   standard_id String
   standard    ComplianceStandard @relation(fields: [standard_id], references: [id])
   molecule_id String
@@ -243,7 +264,20 @@ model ComplianceLimit {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
+  @@unique([profile_id, molecule_id])
   @@unique([standard_id, molecule_id, product_id])
+}
+
+model ComplianceChangeLog {
+  id          String            @id @default(uuid())
+  profile_id  String
+  profile     ComplianceProfile @relation(fields: [profile_id], references: [id])
+  action      String
+  message     String
+  before_json String?
+  after_json  String?
+  actor       String?
+  createdAt   DateTime          @default(now())
 }
 
 model LabReportComplianceCheck {

@@ -19,6 +19,50 @@ describe('isDetectedMolecule', () => {
 });
 
 describe('buildCompliancePreview', () => {
+  it('prefers profile limits for the product and standard pair', async () => {
+    const client = fakeClient({
+      limits: [
+        { standard_id: 'std-1', molecule_id: 'mol-1', product_id: 'product-1', limit_value: 0.02, unit: 'mg/kg' },
+      ],
+      profile: {
+        id: 'profile-1',
+        standard_id: 'std-1',
+        product_id: 'product-1',
+        fallback_limit: 0.03,
+        fallback_unit: 'mg/kg',
+        limits: [
+          { standard_id: 'std-1', molecule_id: 'mol-1', product_id: 'product-1', limit_value: 0.015, unit: 'mg/kg' },
+        ],
+      },
+    });
+
+    const preview = await buildCompliancePreview(client, 'report-1', 'std-1');
+
+    assert.equal(preview.rows[0].limitValue, 0.015);
+    assert.equal(preview.rows[0].limitSource, 'PROFILE');
+    assert.equal(preview.rows[0].isCompliant, true);
+  });
+
+  it('uses the profile default before the standard fallback', async () => {
+    const client = fakeClient({
+      limits: [],
+      profile: {
+        id: 'profile-1',
+        standard_id: 'std-1',
+        product_id: 'product-1',
+        fallback_limit: 0.012,
+        fallback_unit: 'mg/kg',
+        limits: [],
+      },
+    });
+
+    const preview = await buildCompliancePreview(client, 'report-1', 'std-1');
+
+    assert.equal(preview.rows[0].limitValue, 0.012);
+    assert.equal(preview.rows[0].limitSource, 'PROFILE_DEFAULT');
+    assert.equal(preview.rows[0].fallbackUsed, true);
+  });
+
   it('prefers product limits over standard-wide limits', async () => {
     const client = fakeClient({
       limits: [
@@ -35,7 +79,7 @@ describe('buildCompliancePreview', () => {
   });
 
   it('uses the standard fallback when no configured limit exists', async () => {
-    const client = fakeClient({ limits: [] });
+    const client = fakeClient({ limits: [], profile: null });
 
     const preview = await buildCompliancePreview(client, 'report-1', 'std-1');
 
@@ -45,7 +89,7 @@ describe('buildCompliancePreview', () => {
   });
 });
 
-function fakeClient({ limits }: { limits: any[] }) {
+function fakeClient({ limits, profile }: { limits: any[], profile?: any }) {
   const molecule = { id: 'mol-1', name: 'Imidacloprid', normalized_name: 'imidacloprid', cas_number: null };
   return {
     labReport: {
@@ -78,6 +122,15 @@ function fakeClient({ limits }: { limits: any[] }) {
     },
     moleculeResult: {
       update: async () => ({}),
+    },
+    complianceProfile: {
+      findFirst: async ({ where }: { where: any }) => (
+        profile &&
+        profile.standard_id === where.standard_id &&
+        profile.product_id === where.product_id
+          ? profile
+          : null
+      ),
     },
     complianceLimit: {
       findFirst: async ({ where }: { where: any }) => (

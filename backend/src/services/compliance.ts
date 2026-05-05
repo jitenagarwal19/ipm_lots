@@ -97,6 +97,34 @@ export async function findOrCreateMoleculeForResult(client: any, moleculeResult:
 }
 
 async function resolveLimit(client: any, standard: any, moleculeId: string | null, productId: string | null) {
+  if (productId) {
+    const profile = await client.complianceProfile?.findFirst?.({
+      where: { standard_id: standard.id, product_id: productId },
+      include: { limits: true },
+    });
+
+    if (profile) {
+      if (moleculeId) {
+        const profileLimit = (profile.limits || []).find((limit: any) => limit.molecule_id === moleculeId);
+        if (profileLimit) {
+          return {
+            value: profileLimit.limit_value,
+            unit: profileLimit.unit,
+            source: 'PROFILE',
+            fallbackUsed: false,
+          };
+        }
+      }
+
+      return {
+        value: typeof profile.fallback_limit === 'number' ? profile.fallback_limit : DEFAULT_FALLBACK_LIMIT,
+        unit: profile.fallback_unit || DEFAULT_UNIT,
+        source: 'PROFILE_DEFAULT',
+        fallbackUsed: true,
+      };
+    }
+  }
+
   if (moleculeId) {
     if (productId) {
       const productLimit = await client.complianceLimit.findFirst({

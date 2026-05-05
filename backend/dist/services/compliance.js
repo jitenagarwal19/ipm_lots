@@ -114,6 +114,32 @@ function findOrCreateMoleculeForResult(client, moleculeResult) {
 }
 function resolveLimit(client, standard, moleculeId, productId) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b;
+        if (productId) {
+            const profile = yield ((_b = (_a = client.complianceProfile) === null || _a === void 0 ? void 0 : _a.findFirst) === null || _b === void 0 ? void 0 : _b.call(_a, {
+                where: { standard_id: standard.id, product_id: productId },
+                include: { limits: true },
+            }));
+            if (profile) {
+                if (moleculeId) {
+                    const profileLimit = (profile.limits || []).find((limit) => limit.molecule_id === moleculeId);
+                    if (profileLimit) {
+                        return {
+                            value: profileLimit.limit_value,
+                            unit: profileLimit.unit,
+                            source: 'PROFILE',
+                            fallbackUsed: false,
+                        };
+                    }
+                }
+                return {
+                    value: typeof profile.fallback_limit === 'number' ? profile.fallback_limit : DEFAULT_FALLBACK_LIMIT,
+                    unit: profile.fallback_unit || DEFAULT_UNIT,
+                    source: 'PROFILE_DEFAULT',
+                    fallbackUsed: true,
+                };
+            }
+        }
         if (moleculeId) {
             if (productId) {
                 const productLimit = yield client.complianceLimit.findFirst({
