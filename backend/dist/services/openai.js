@@ -12,9 +12,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildAnalyzeLabReportPrompt = buildAnalyzeLabReportPrompt;
-exports.analyzeLabReportWithClient = analyzeLabReportWithClient;
-exports.analyzeLabReport = analyzeLabReport;
+exports.PROMPT_VERSION = void 0;
+exports.buildSectionPrompt = buildSectionPrompt;
+exports.normalizeReports = normalizeReports;
+exports.analyzeLabReportSection = analyzeLabReportSection;
 const openai_1 = __importDefault(require("openai"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const client_1 = require("@prisma/client");
@@ -23,7 +24,8 @@ dotenv_1.default.config();
 const prisma = new client_1.PrismaClient();
 const apiKey = process.env.OPENAI_API_KEY || process.env.OPEN_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 180000);
+const OPENAI_MAX_TOKENS = Number(process.env.OPENAI_MAX_TOKENS || 8000);
+exports.PROMPT_VERSION = "lab-report-v2-detected-only";
 const openai = new openai_1.default({
     apiKey,
 });
@@ -49,87 +51,113 @@ function saveAiLog(logRepository, messageId, prompt, response) {
         }
     });
 }
-function buildAnalyzeLabReportPrompt(emailBody, attachmentText) {
+function buildSectionPrompt(input) {
+    const { kind, text, sourceFilename } = input;
+    const sourceTag = kind === "body"
+        ? "EMAIL BODY"
+        : `ATTACHMENT: ${sourceFilename || "unknown.pdf"}`;
+    const sourceTypeLiteral = kind === "body" ? "EMAIL_BODY" : "ATTACHMENT";
+    const filenameRule = kind === "attachment" && sourceFilename
+        ? `- Set "sourceAttachmentFilename" to "${sourceFilename}".`
+        : '- Set "sourceAttachmentFilename" to null.';
     return `
-  You are an AI assistant tasked with extracting structured data from lab test reports.
-  Please read the following email body and the extracted text from all attached PDF reports.
-  An email can contain zero, one, or many lab reports across one or many attachments.
-  Extract each distinct report separately, including the report metadata and the complete molecule/analyte results table for that report.
+You are an AI assistant extracting structured lab-report data from a single ${sourceTag}.
 
-  Important extraction rules:
-  - Always return a "reports" array. If you discover only one report, return an array containing one report object.
-  - Return an empty "reports" array if no lab report is present.
-  - Return every molecule/analyte listed in the report, not only detected molecules and not only failures.
-  - Never collapse multiple analytes into a synthetic summary row such as "Other analysed pesticides", "other pesticides", "all other analytes", "remaining analytes", or similar. Those phrases are not molecule names.
-  - When the attachment text lists many analytes in one paragraph, numbered list, comma-separated list, or line-wrapped table, split them into separate moleculeResults entries. For example, "Chlorantraniliprole (0.01), Clothianidin (0.01), Cyantraniliprole (0.01)" must become three separate rows.
-  - Include not-detected/BLQ/BDL/ND analytes as separate rows using their own molecule names and shared limit values when the report groups them.
-  - Before responding, compare moleculeResults.length with the number of analyte names visible in the report. If the report visibly lists around 50 analytes, moleculeResults must contain around 50 entries, not only the detected subset.
-  - If an analyte appears only in a grouped "not detected" list with a limit in parentheses, use that limit as reportingLimit/specificationLimit when the report does not clarify which kind of limit it is, set result to "BLQ", "BDL", "ND", or the exact grouped result text if shown, and set isDetected to false.
-  - Preserve each molecule's full result details, including measured value, units, reporting limit, method limit, status, pass/fail decision, and any notes when present.
-  - If a metadata field is absent or unclear, return null for that field instead of guessing.
-  - Keep each report's top-level lotNumber equal to that report's metadata lotNumber so existing lot mapping can continue to work.
-  - Use attachment filename markers when present to keep separate reports separate. Do not merge two different report certificates into one report object.
-  - Set sourceType to "EMAIL_BODY" if the results came only from the email body, "ATTACHMENT" if they came only from an attachment, or "EMAIL_AND_ATTACHMENT" if both were needed.
+This text may contain zero, one, or many lab reports. Each report covers a distinct lot. Extract each report separately.
 
-  Email Body:
-  ${emailBody}
-
-  Attachment Text From All Attachments:
-  ${attachmentText}
-
-  Respond strictly in JSON format with the following structure:
-  {
-    "reports": [
-      {
-        "lotNumber": "extracted lot number or null if not found",
-        "sourceType": "EMAIL_BODY, ATTACHMENT, EMAIL_AND_ATTACHMENT, or UNKNOWN",
-        "sourceAttachmentFilename": "attachment filename this report came from, or null",
-        "metadata": {
-          "reportId": "report id, certificate number, or sample/report reference, or null",
-          "labName": "testing laboratory name or null",
-          "lotNumber": "lot number or null",
-          "sampleId": "sample id or null",
-          "sampleName": "sample/product name or null",
-          "sampleType": "sample type/matrix/category or null",
-          "sampleCondition": "sample condition on receipt/submission or null",
-          "dateSampleSubmitted": "sample submitted/received date in ISO-8601 format when possible, or original date text, or null",
-          "dateSampleCollected": "sample collection date in ISO-8601 format when possible, or original date text, or null",
-          "dateReported": "report/certificate issue date in ISO-8601 format when possible, or original date text, or null",
-          "clientName": "client/customer name or null",
-          "labAddress": "lab address or null",
-          "reportStatus": "final/amended/draft/etc. or null"
-        },
-        "results": {
-          "summary": "brief summary of the test results",
-          "isValid": boolean (true if the test passed, false if failed, or null if unknown)
-        },
-        "extractionQuality": {
-          "visibleAnalyteCountEstimate": number or null,
-          "moleculeResultsCount": number,
-          "hasCollapsedAnalyteGroup": false,
-          "notes": "brief note about completeness, especially if source text is truncated or table text is hard to read"
-        },
-        "moleculeResults": [
-          {
-            "moleculeName": "molecule/analyte name exactly as shown",
-            "casNumber": "CAS number or null",
-            "result": "full result value/text exactly as shown, or null",
-            "numericResult": number or null,
-            "unit": "unit of measure or null",
-            "reportingLimit": "reporting limit/LOQ/RL text or null",
-            "methodDetectionLimit": "MDL/LOD text or null",
-            "specificationLimit": "allowed threshold/limit text or null",
-            "method": "test method or null",
-            "status": "detected/not detected/pass/fail/trace/etc. or null",
-            "isDetected": boolean or null,
-            "isCompliant": boolean or null,
-            "notes": "row-level notes, qualifiers, or null"
-          }
-        ]
+Output JSON with EXACTLY this shape, no extra keys:
+{
+  "reports": [
+    {
+      "lotNumber": "string or null (must equal metadata.lotNumber)",
+      "sourceType": "${sourceTypeLiteral}",
+      "sourceAttachmentFilename": "string or null",
+      "metadata": {
+        "reportId": "string or null",
+        "labName": "string or null",
+        "lotNumber": "string or null",
+        "sampleId": "string or null",
+        "sampleName": "string or null",
+        "sampleType": "string or null",
+        "sampleCondition": "string or null",
+        "dateSampleSubmitted": "string or null",
+        "dateSampleCollected": "string or null",
+        "dateReported": "string or null",
+        "clientName": "string or null",
+        "labAddress": "string or null",
+        "reportStatus": "string or null"
+      },
+      "results": {
+        "summary": "short string",
+        "isValid": "boolean or null"
+      },
+      "extractionQuality": {
+        "visibleAnalyteCountEstimate": "number or null",
+        "detectedCount": "number",
+        "undetectedCount": "number",
+        "notes": "string or null"
+      },
+      "moleculeResults": [
+        {
+          "moleculeName": "string (exact name)",
+          "casNumber": "string or null",
+          "result": "string (full result text as shown)",
+          "numericResult": "number or null",
+          "unit": "string or null",
+          "reportingLimit": "string or null",
+          "methodDetectionLimit": "string or null",
+          "specificationLimit": "string or null",
+          "method": "string or null",
+          "status": "string or null",
+          "isCompliant": "boolean or null",
+          "notes": "string or null"
+        }
+      ],
+      "undetectedMolecules": [
+        "moleculeName1",
+        "moleculeName2"
+      ],
+      "undetectedSharedDefaults": {
+        "result": "string or null",
+        "reportingLimit": "string or null",
+        "methodDetectionLimit": "string or null",
+        "specificationLimit": "string or null",
+        "method": "string or null",
+        "isCompliant": "boolean or null",
+        "notes": "string or null"
       }
-    ]
-  }
-  `;
+    }
+  ]
+}
+
+Detection rules (CRITICAL):
+- "moleculeResults" contains DETECTED analytes ONLY: analytes with a measurable, numeric, or qualitative positive result. Each entry must include the full per-row detail.
+- "undetectedMolecules" is a list of NAMES ONLY (strings). Put every analyte reported as Not Detected, ND, BLQ, BDL, "below LOQ", "<LOQ", or any equivalent non-detection result here. No per-row detail.
+- If the same reporting/specification limit applies to the whole undetected group, populate "undetectedSharedDefaults" with that shared limit. Otherwise return null fields.
+- Never invent a synthetic row like "Other analysed pesticides" or "remaining analytes". Split grouped lists (e.g. "Chlorantraniliprole (0.01), Clothianidin (0.01)") into individual entries in "undetectedMolecules".
+- "extractionQuality.detectedCount" must equal moleculeResults.length. "extractionQuality.undetectedCount" must equal undetectedMolecules.length.
+
+Compliance rules (CRITICAL):
+- An analyte that was Not Detected (ND/BLQ/BDL/<LOQ/etc.) is ALWAYS compliant. Set "isCompliant": true for any undetected analyte and for "undetectedSharedDefaults".
+- For detected analytes, set "isCompliant" by comparing the numeric result against the specification limit when both are available: result <= specification limit -> true, result > specification limit -> false.
+- If a detected analyte has no specification limit you can rely on, return null for "isCompliant" instead of guessing.
+
+Limit-column mapping (CRITICAL — do not confuse these three fields):
+- "reportingLimit" = the limit of QUANTIFICATION/REPORTING. Pull this from columns labelled "LOQ", "LOR", "RL", "Reporting Limit", "Quantification Limit", "QL". This is typically the smallest value in the row (e.g. 0.01 mg/kg).
+- "specificationLimit" = the regulatory / MRL / customer SPECIFICATION the result is judged against. Pull this from columns labelled "Limit", "MRL", "Maximum Residue Limit", "Spec", "Specification", "Standard", "Acceptance Criteria". This is the value that determines pass/fail and is typically larger than the LOQ. If the report shows "Limit" alongside "LOQ", "Limit" is the specificationLimit.
+- "methodDetectionLimit" = ONLY use this when the report explicitly labels a column "MDL", "DL", "Method Detection Limit", "Detection Limit". If no such explicit column exists, leave methodDetectionLimit null. Never put an MRL / specification value here.
+- A purely numeric column header like "Limit" (with no LOQ/MDL qualifier) maps to specificationLimit, NOT methodDetectionLimit.
+
+Other rules:
+- Use null for missing or unclear values. Do not guess.
+- Top-level "lotNumber" must equal metadata.lotNumber.
+- "sourceType" must be exactly "${sourceTypeLiteral}".
+${filenameRule}
+- Return an empty "reports" array if no lab report is present in this text.
+
+${sourceTag}:
+${text}
+`;
 }
 function normalizeReports(parsed) {
     if (Array.isArray(parsed)) {
@@ -143,60 +171,72 @@ function normalizeReports(parsed) {
     }
     return [];
 }
-function analyzeLabReportWithClient(emailBody, attachmentText, messageId, client, logRepository, requestId) {
-    return __awaiter(this, void 0, void 0, function* () {
+function analyzeLabReportSection(input_1, messageId_1) {
+    return __awaiter(this, arguments, void 0, function* (input, messageId, client = openai, logRepository = prisma, requestId) {
         var _a, _b;
         const trace = requestId !== null && requestId !== void 0 ? requestId : "—";
-        const prompt = buildAnalyzeLabReportPrompt(emailBody, attachmentText);
+        const sectionId = `${messageId}#${input.kind}${input.sourceFilename ? `:${input.sourceFilename}` : ''}`;
+        const prompt = buildSectionPrompt(input);
         const startedAt = Date.now();
         if (!apiKey && client === openai) {
             const message = "OpenAI API key not configured. Set OPENAI_API_KEY in backend/.env.";
-            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${messageId}] ${message}`);
-            yield saveAiLog(logRepository, messageId, prompt, JSON.stringify({ error: message }));
+            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${sectionId}] ${message}`);
+            yield saveAiLog(logRepository, sectionId, prompt, JSON.stringify({
+                error: message,
+                promptVersion: exports.PROMPT_VERSION,
+            }));
             throw new Error(message);
         }
-        (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${messageId}] Sending lab report analysis request`, {
+        (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${sectionId}] Sending lab report section`, {
+            kind: input.kind,
+            sourceFilename: (_a = input.sourceFilename) !== null && _a !== void 0 ? _a : null,
             model: OPENAI_MODEL,
-            emailBodyChars: emailBody.length,
-            attachmentTextChars: attachmentText.length,
+            promptVersion: exports.PROMPT_VERSION,
+            maxTokens: OPENAI_MAX_TOKENS,
+            inputChars: input.text.length,
             promptChars: prompt.length,
             promptPreview: preview(prompt),
         });
         try {
-            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${messageId}] chat.completions.create: waiting (timeout=${OPENAI_TIMEOUT_MS}ms)`);
+            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${sectionId}] chat.completions.create: waiting`);
             const response = yield client.chat.completions.create({
                 model: OPENAI_MODEL,
                 messages: [{ role: "user", content: prompt }],
                 response_format: { type: "json_object" },
-            }, {
-                timeout: OPENAI_TIMEOUT_MS,
-                maxRetries: 1,
+                max_tokens: OPENAI_MAX_TOKENS,
+                temperature: 0,
             });
-            const content = (_a = response.choices[0]) === null || _a === void 0 ? void 0 : _a.message.content;
+            const choice = response.choices[0];
+            const content = choice === null || choice === void 0 ? void 0 : choice.message.content;
+            const finishReason = (_b = choice === null || choice === void 0 ? void 0 : choice.finish_reason) !== null && _b !== void 0 ? _b : null;
+            if (finishReason === 'length') {
+                throw new Error(`OpenAI response truncated (finish_reason=length, max_tokens=${OPENAI_MAX_TOKENS}). Increase OPENAI_MAX_TOKENS or shorten the input.`);
+            }
             if (!content)
                 throw new Error("No content received from OpenAI");
-            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${messageId}] Received lab report analysis response`, {
+            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${sectionId}] Received response`, {
                 durationMs: Date.now() - startedAt,
                 responseId: response.id,
                 responseModel: response.model,
-                finishReason: (_b = response.choices[0]) === null || _b === void 0 ? void 0 : _b.finish_reason,
+                finishReason,
                 usage: response.usage,
                 responseChars: content.length,
                 responsePreview: preview(content),
             });
-            yield saveAiLog(logRepository, messageId, prompt, content);
+            yield saveAiLog(logRepository, sectionId, prompt, content);
             try {
                 const parsed = JSON.parse(content);
                 const reports = normalizeReports(parsed);
-                (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${messageId}] Parsed lab report analysis`, {
+                (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${sectionId}] Parsed reports`, {
                     reportCount: reports.length,
-                    lotNumbers: reports.map((report) => { var _a; return (_a = report === null || report === void 0 ? void 0 : report.lotNumber) !== null && _a !== void 0 ? _a : null; }),
-                    moleculeResultCounts: reports.map((report) => Array.isArray(report === null || report === void 0 ? void 0 : report.moleculeResults) ? report.moleculeResults.length : null),
+                    lotNumbers: reports.map((r) => { var _a; return (_a = r === null || r === void 0 ? void 0 : r.lotNumber) !== null && _a !== void 0 ? _a : null; }),
+                    detectedCounts: reports.map((r) => Array.isArray(r === null || r === void 0 ? void 0 : r.moleculeResults) ? r.moleculeResults.length : 0),
+                    undetectedCounts: reports.map((r) => Array.isArray(r === null || r === void 0 ? void 0 : r.undetectedMolecules) ? r.undetectedMolecules.length : 0),
                 });
                 return reports;
             }
             catch (parseError) {
-                (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${messageId}] Failed to parse OpenAI JSON response`, {
+                (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${sectionId}] Failed to parse JSON`, {
                     error: parseError.message,
                     responsePreview: preview(content),
                 });
@@ -204,7 +244,7 @@ function analyzeLabReportWithClient(emailBody, attachmentText, messageId, client
             }
         }
         catch (error) {
-            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${messageId}] Error analyzing lab report`, {
+            (0, serverLog_1.serverLog)(`[trace=${trace}][OPENAI][${sectionId}] Error analyzing section`, {
                 durationMs: Date.now() - startedAt,
                 error: error.message,
                 name: error.name,
@@ -212,19 +252,15 @@ function analyzeLabReportWithClient(emailBody, attachmentText, messageId, client
                 code: error.code,
                 type: error.type,
             });
-            yield saveAiLog(logRepository, messageId, prompt, JSON.stringify({
+            yield saveAiLog(logRepository, sectionId, prompt, JSON.stringify({
                 error: error.message,
                 name: error.name,
                 status: error.status,
                 code: error.code,
                 type: error.type,
+                promptVersion: exports.PROMPT_VERSION,
             }));
             throw error;
         }
-    });
-}
-function analyzeLabReport(emailBody, attachmentText, messageId, requestId) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return analyzeLabReportWithClient(emailBody, attachmentText, messageId, openai, prisma, requestId);
     });
 }

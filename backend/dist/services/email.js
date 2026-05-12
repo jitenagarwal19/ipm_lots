@@ -12,6 +12,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isPdfAttachment = isPdfAttachment;
+exports.shouldAnalyzeEmailBody = shouldAnalyzeEmailBody;
+exports.mergeReportsForSameLot = mergeReportsForSameLot;
+exports.unionMergeReportsByLot = unionMergeReportsByLot;
+exports.expandUndetectedMolecules = expandUndetectedMolecules;
 exports.extractPdfText = extractPdfText;
 exports.sendTestRequestEmail = sendTestRequestEmail;
 exports.pollForReplies = pollForReplies;
@@ -25,6 +30,7 @@ const uuid_1 = require("uuid");
 const emailTemplates_1 = require("../templates/emailTemplates");
 const pdfParse = require('pdf-parse');
 const openai_1 = require("./openai");
+const pLimit_1 = require("../lib/pLimit");
 const client_1 = require("@prisma/client");
 const serverLog_1 = require("../lib/serverLog");
 const prisma = new client_1.PrismaClient();
@@ -34,6 +40,10 @@ const UPLOADS_PATH = path_1.default.join(process.cwd(), 'uploads');
 const TRACKED_EMAIL_LIMIT = Number(process.env.TRACKED_EMAIL_LIMIT || 10);
 const PROCESSED_GMAIL_LABEL = process.env.PROCESSED_GMAIL_LABEL || 'processed';
 const OPENAI_MAX_ATTACHMENT_CHARS = Number(process.env.OPENAI_MAX_ATTACHMENT_CHARS || 45000);
+const OPENAI_SECTION_CONCURRENCY = Number(process.env.OPENAI_SECTION_CONCURRENCY || 10);
+const PDF_EXTENSIONS = ['.pdf'];
+const BODY_KEYWORD_REGEX = /\b(lot|sample|report|cas|ppm|mg\/?kg|loq|lod|mdl|certificate|analyte|residue|pesticide)\b/i;
+const BODY_MIN_CHARS = 200;
 const STORAGE_MODE = process.env.STORAGE_MODE || 'local';
 const s3Client = new client_s3_1.S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -95,8 +105,156 @@ function inferReportSourceType(report, attachment) {
         return 'ATTACHMENT';
     return 'EMAIL_BODY';
 }
-function mapMoleculeResult(reportId, molecule) {
+function isPdfAttachment(filename) {
+    const lower = (filename || '').toLowerCase();
+    return PDF_EXTENSIONS.some(ext => lower.endsWith(ext));
+}
+/**
+ * Cheap precheck: only call OpenAI on the email body when it has enough
+ * substance to plausibly contain report data. Filters out the common
+ * "Please find attached" two-liners.
+ */
+function shouldAnalyzeEmailBody(bodyText) {
+    const trimmed = (bodyText || '').trim();
+    if (trimmed.length < BODY_MIN_CHARS)
+        return false;
+    return BODY_KEYWORD_REGEX.test(trimmed);
+}
+/**
+ * Stable, lossless union-merge of two report objects describing the SAME lot.
+ *
+ * Strategy:
+ *  - Scalars (lotNumber, sourceType, sourceAttachmentFilename, lab metadata fields):
+ *    prefer the first non-null/non-empty value (existing wins, incoming fills gaps).
+ *  - moleculeResults: union by moleculeName (case-insensitive), preserving order.
+ *  - undetectedMolecules: union by name (case-insensitive).
+ *  - undetectedSharedDefaults: deep-merge with existing winning on conflict.
+ *
+ * Rationale: PDF attachments usually carry the authoritative table; the
+ * email body may add a summary/clientName/reportStatus the PDF lacks. Union
+ * keeps both views without dropping data.
+ */
+function mergeReportsForSameLot(existing, incoming) {
+    var _a, _b, _c, _d;
+    if (!existing)
+        return incoming;
+    if (!incoming)
+        return existing;
+    const merged = Object.assign({}, existing);
+    const fillScalars = (target, source) => {
+        if (!source)
+            return;
+        for (const [key, value] of Object.entries(source)) {
+            const current = target[key];
+            const isEmpty = current === undefined ||
+                current === null ||
+                (typeof current === 'string' && current.trim() === '');
+            if (isEmpty && value !== undefined) {
+                target[key] = value;
+            }
+        }
+    };
+    fillScalars(merged, {
+        lotNumber: incoming.lotNumber,
+        sourceType: incoming.sourceType,
+        sourceAttachmentFilename: incoming.sourceAttachmentFilename,
+    });
+    merged.metadata = Object.assign(Object.assign({}, (incoming.metadata || {})), (existing.metadata || {}));
+    fillScalars(merged.metadata, incoming.metadata || {});
+    if (!merged.results || (typeof merged.results === 'object' && Object.keys(merged.results).length === 0)) {
+        merged.results = (_b = (_a = incoming.results) !== null && _a !== void 0 ? _a : merged.results) !== null && _b !== void 0 ? _b : null;
+    }
+    const detectedMap = new Map();
+    for (const m of [
+        ...(Array.isArray(existing.moleculeResults) ? existing.moleculeResults : []),
+        ...(Array.isArray(incoming.moleculeResults) ? incoming.moleculeResults : []),
+    ]) {
+        const key = String((_d = (_c = m === null || m === void 0 ? void 0 : m.moleculeName) !== null && _c !== void 0 ? _c : m === null || m === void 0 ? void 0 : m.name) !== null && _d !== void 0 ? _d : '').trim().toLowerCase();
+        if (!key)
+            continue;
+        if (!detectedMap.has(key))
+            detectedMap.set(key, m);
+    }
+    merged.moleculeResults = Array.from(detectedMap.values());
+    const undetectedSet = new Map();
+    for (const name of [
+        ...(Array.isArray(existing.undetectedMolecules) ? existing.undetectedMolecules : []),
+        ...(Array.isArray(incoming.undetectedMolecules) ? incoming.undetectedMolecules : []),
+    ]) {
+        const display = String(name || '').trim();
+        if (!display)
+            continue;
+        const key = display.toLowerCase();
+        if (!undetectedSet.has(key))
+            undetectedSet.set(key, display);
+    }
+    merged.undetectedMolecules = Array.from(undetectedSet.values());
+    merged.undetectedSharedDefaults = Object.assign(Object.assign({}, (incoming.undetectedSharedDefaults || {})), (existing.undetectedSharedDefaults || {}));
+    return merged;
+}
+/**
+ * Union-merge a flat list of reports by lotNumber (case-insensitive).
+ * Reports without a lotNumber are kept as-is (no merging).
+ */
+function unionMergeReportsByLot(reports) {
+    var _a;
+    const byLot = new Map();
+    const noLot = [];
+    for (const report of reports) {
+        const lot = String((_a = report === null || report === void 0 ? void 0 : report.lotNumber) !== null && _a !== void 0 ? _a : '').trim();
+        if (!lot) {
+            noLot.push(report);
+            continue;
+        }
+        const key = lot.toLowerCase();
+        const existing = byLot.get(key);
+        byLot.set(key, existing ? mergeReportsForSameLot(existing, report) : report);
+    }
+    return [...byLot.values(), ...noLot];
+}
+/**
+ * Expand the compact "undetectedMolecules + undetectedSharedDefaults" pair
+ * back into individual MoleculeResult-shaped rows so the existing DB schema
+ * (one row per analyte) keeps working unchanged.
+ */
+function expandUndetectedMolecules(report) {
+    const names = Array.isArray(report === null || report === void 0 ? void 0 : report.undetectedMolecules) ? report.undetectedMolecules : [];
+    if (names.length === 0)
+        return [];
+    const shared = (report === null || report === void 0 ? void 0 : report.undetectedSharedDefaults) || {};
+    return names
+        .map(name => {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        const moleculeName = typeof name === 'string'
+            ? name.trim()
+            : String((name === null || name === void 0 ? void 0 : name.moleculeName) || (name === null || name === void 0 ? void 0 : name.name) || '').trim();
+        if (!moleculeName)
+            return null;
+        return {
+            moleculeName,
+            casNumber: typeof name === 'object' ? (_a = name === null || name === void 0 ? void 0 : name.casNumber) !== null && _a !== void 0 ? _a : null : null,
+            result: (_b = shared.result) !== null && _b !== void 0 ? _b : 'Not Detected',
+            numericResult: null,
+            unit: (_c = shared.unit) !== null && _c !== void 0 ? _c : null,
+            reportingLimit: (_d = shared.reportingLimit) !== null && _d !== void 0 ? _d : null,
+            methodDetectionLimit: (_e = shared.methodDetectionLimit) !== null && _e !== void 0 ? _e : null,
+            specificationLimit: (_f = shared.specificationLimit) !== null && _f !== void 0 ? _f : null,
+            method: (_g = shared.method) !== null && _g !== void 0 ? _g : null,
+            status: (_h = shared.result) !== null && _h !== void 0 ? _h : 'Not Detected',
+            isDetected: false,
+            // Business rule: a molecule that was not detected is always compliant.
+            isCompliant: true,
+            notes: (_j = shared.notes) !== null && _j !== void 0 ? _j : null,
+        };
+    })
+        .filter(Boolean);
+}
+function mapMoleculeResult(reportId, molecule, isDetectedFallback = null) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    const isDetected = typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isDetected) === 'boolean' ? molecule.isDetected : isDetectedFallback;
+    const isCompliant = isDetected === false
+        ? true
+        : (typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isCompliant) === 'boolean' ? molecule.isCompliant : null);
     return {
         lab_report_id: reportId,
         molecule_name: String((molecule === null || molecule === void 0 ? void 0 : molecule.moleculeName) || (molecule === null || molecule === void 0 ? void 0 : molecule.name) || 'Unknown molecule'),
@@ -109,8 +267,8 @@ function mapMoleculeResult(reportId, molecule) {
         specification_limit: (_f = molecule === null || molecule === void 0 ? void 0 : molecule.specificationLimit) !== null && _f !== void 0 ? _f : null,
         method: (_g = molecule === null || molecule === void 0 ? void 0 : molecule.method) !== null && _g !== void 0 ? _g : null,
         status: (_h = molecule === null || molecule === void 0 ? void 0 : molecule.status) !== null && _h !== void 0 ? _h : null,
-        is_detected: typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isDetected) === 'boolean' ? molecule.isDetected : null,
-        is_compliant: typeof (molecule === null || molecule === void 0 ? void 0 : molecule.isCompliant) === 'boolean' ? molecule.isCompliant : null,
+        is_detected: isDetected,
+        is_compliant: isCompliant,
         notes: (_j = molecule === null || molecule === void 0 ? void 0 : molecule.notes) !== null && _j !== void 0 ? _j : null,
     };
 }
@@ -448,9 +606,12 @@ function processTrackedEmail(messageId, opts) {
             attachmentCount: attachmentIds.length,
             attachmentFilenames: attachmentIds.map(att => att.filename),
         });
-        const pdfTextSections = [];
+        const pdfSections = [];
         const savedAttachments = [];
-        // Download and parse attachments
+        let skippedNonPdfAttachments = 0;
+        // Download and parse attachments. Image / non-PDF attachments are saved
+        // for reference but excluded from OpenAI analysis (they have no text and
+        // would just waste tokens / time).
         stepStartedAt = Date.now();
         for (const att of attachmentIds) {
             const attRes = yield gmail.users.messages.attachments.get({
@@ -458,57 +619,135 @@ function processTrackedEmail(messageId, opts) {
                 messageId: messageId,
                 id: att.id
             });
-            if (attRes.data.data) {
-                const buffer = decodeBase64Url(attRes.data.data);
-                const filename = `${(0, uuid_1.v4)()}_${att.filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-                const mimeType = att.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
-                const fileUrl = yield uploadFile(filename, buffer, mimeType);
-                (0, serverLog_1.serverLog)(`[trace=${trace}][GMAIL SERVICE][${messageId}] Saved attachment to ${STORAGE_MODE}`, {
-                    originalFilename: att.filename,
-                    savedFilename: filename,
-                    bytes: buffer.length,
-                    url: fileUrl,
-                });
-                const extractedText = yield extractPdfText(att.filename, buffer);
+            if (!attRes.data.data)
+                continue;
+            const buffer = decodeBase64Url(attRes.data.data);
+            const filename = `${(0, uuid_1.v4)()}_${att.filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+            const isPdf = isPdfAttachment(att.filename);
+            const mimeType = isPdf ? 'application/pdf' : 'application/octet-stream';
+            const fileUrl = yield uploadFile(filename, buffer, mimeType);
+            (0, serverLog_1.serverLog)(`[trace=${trace}][GMAIL SERVICE][${messageId}] Saved attachment to ${STORAGE_MODE}`, {
+                originalFilename: att.filename,
+                savedFilename: filename,
+                bytes: buffer.length,
+                url: fileUrl,
+                pdf: isPdf,
+            });
+            if (!isPdf) {
+                skippedNonPdfAttachments += 1;
                 savedAttachments.push({
                     original_filename: att.filename,
                     file_url: fileUrl,
                     file_type: mimeType,
-                    extracted_text: extractedText.trim() || null,
+                    extracted_text: null,
                 });
-                if (extractedText.trim()) {
-                    pdfTextSections.push([
-                        `--- Attachment: ${att.filename} ---`,
-                        extractedText.trim(),
-                        `--- End Attachment: ${att.filename} ---`,
-                    ].join('\n'));
+                continue;
+            }
+            const extractedText = yield extractPdfText(att.filename, buffer);
+            savedAttachments.push({
+                original_filename: att.filename,
+                file_url: fileUrl,
+                file_type: mimeType,
+                extracted_text: extractedText.trim() || null,
+            });
+            if (extractedText.trim()) {
+                const trimmedText = extractedText.trim();
+                const truncated = trimmedText.length > OPENAI_MAX_ATTACHMENT_CHARS
+                    ? `${trimmedText.slice(0, OPENAI_MAX_ATTACHMENT_CHARS)}\n\n[TRUNCATED attachment text: ${trimmedText.length - OPENAI_MAX_ATTACHMENT_CHARS} chars removed]`
+                    : trimmedText;
+                pdfSections.push({ filename: att.filename, text: truncated });
+                if (truncated.length !== trimmedText.length) {
+                    (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] attachment text truncated for OpenAI: file=${att.filename} raw=${trimmedText.length} sent=${truncated.length}`);
                 }
             }
         }
         timings.attachmentProcessingMs = Date.now() - stepStartedAt;
-        // OpenAI Analysis
-        const fullPdfTextRaw = pdfTextSections.join('\n\n');
-        const fullPdfText = fullPdfTextRaw.length > OPENAI_MAX_ATTACHMENT_CHARS
-            ? `${fullPdfTextRaw.slice(0, OPENAI_MAX_ATTACHMENT_CHARS)}\n\n[TRUNCATED attachment text: ${fullPdfTextRaw.length - OPENAI_MAX_ATTACHMENT_CHARS} chars removed]`
-            : fullPdfTextRaw;
         (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] attachments done in ${timings.attachmentProcessingMs}ms`, {
             bodyChars: bodyText.length,
-            pdfTextChars: fullPdfText.length,
-            pdfTextCharsRaw: fullPdfTextRaw.length,
+            pdfReportSectionCount: pdfSections.length,
+            skippedNonPdfAttachments,
             savedAttachmentCount: savedAttachments.length,
-            pdfReportSectionCount: pdfTextSections.length,
         });
-        if (fullPdfTextRaw.length !== fullPdfText.length) {
-            (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] attachment text truncated for OpenAI: raw=${fullPdfTextRaw.length} sent=${fullPdfText.length}`);
+        // OpenAI Analysis: dedicated body call (gated by precheck) + one call per
+        // PDF attachment, all run in parallel with a concurrency cap. Per-section
+        // failures are logged but do NOT abort the email — other sections still
+        // produce reports.
+        const sectionLimit = (0, pLimit_1.pLimit)(OPENAI_SECTION_CONCURRENCY);
+        const wantsBodyCall = shouldAnalyzeEmailBody(bodyText);
+        const sectionResults = [];
+        if (!wantsBodyCall) {
+            (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] body precheck skipped OpenAI call (chars=${bodyText.trim().length}, hasKeyword=${BODY_KEYWORD_REGEX.test(bodyText)})`);
         }
-        (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] OpenAI: starting (large PDFs / many analytes can take 1–5+ minutes; UI progress bar is only a rough timer)`);
+        else {
+            (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] body precheck queued: chars=${bodyText.trim().length}`);
+        }
+        (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] OpenAI: starting ${wantsBodyCall ? 1 : 0} body + ${pdfSections.length} attachment sections (concurrency=${OPENAI_SECTION_CONCURRENCY})`);
+        const sectionPromises = [];
+        if (wantsBodyCall) {
+            sectionPromises.push(sectionLimit(() => __awaiter(this, void 0, void 0, function* () {
+                var _a;
+                const sectionStart = Date.now();
+                try {
+                    const reports = yield (0, openai_1.analyzeLabReportSection)({ kind: 'body', text: bodyText }, messageId, undefined, undefined, trace);
+                    sectionResults.push({
+                        kind: 'body',
+                        reports,
+                        durationMs: Date.now() - sectionStart,
+                    });
+                    (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] section body: ${reports.length} report(s) in ${Date.now() - sectionStart}ms`);
+                }
+                catch (error) {
+                    sectionResults.push({
+                        kind: 'body',
+                        reports: [],
+                        durationMs: Date.now() - sectionStart,
+                        error: (error === null || error === void 0 ? void 0 : error.message) || String(error),
+                    });
+                    (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] section body FAILED in ${Date.now() - sectionStart}ms: ${(_a = error === null || error === void 0 ? void 0 : error.message) !== null && _a !== void 0 ? _a : error}`);
+                }
+            })));
+        }
+        pdfSections.forEach((section, index) => {
+            sectionPromises.push(sectionLimit(() => __awaiter(this, void 0, void 0, function* () {
+                var _a;
+                const sectionStart = Date.now();
+                try {
+                    const reports = yield (0, openai_1.analyzeLabReportSection)({ kind: 'attachment', text: section.text, sourceFilename: section.filename }, messageId, undefined, undefined, trace);
+                    sectionResults.push({
+                        kind: 'attachment',
+                        filename: section.filename,
+                        reports,
+                        durationMs: Date.now() - sectionStart,
+                    });
+                    (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] section attachment ${index + 1}/${pdfSections.length} (${section.filename}): ${reports.length} report(s) in ${Date.now() - sectionStart}ms`);
+                }
+                catch (error) {
+                    sectionResults.push({
+                        kind: 'attachment',
+                        filename: section.filename,
+                        reports: [],
+                        durationMs: Date.now() - sectionStart,
+                        error: (error === null || error === void 0 ? void 0 : error.message) || String(error),
+                    });
+                    (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] section attachment ${index + 1}/${pdfSections.length} (${section.filename}) FAILED in ${Date.now() - sectionStart}ms: ${(_a = error === null || error === void 0 ? void 0 : error.message) !== null && _a !== void 0 ? _a : error}`);
+                }
+            })));
+        });
         stepStartedAt = Date.now();
-        const analysis = yield (0, openai_1.analyzeLabReport)(bodyText, fullPdfText, messageId, trace);
+        yield Promise.allSettled(sectionPromises);
         timings.openAiMs = Date.now() - stepStartedAt;
-        const reports = Array.isArray(analysis) ? analysis : [];
-        (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] OpenAI: finished in ${timings.openAiMs}ms`, {
-            reportCount: reports.length,
+        const allReports = sectionResults.flatMap(s => s.reports);
+        const reports = unionMergeReportsByLot(allReports);
+        const sectionsBreakdown = sectionResults.map(s => {
+            var _a, _b;
+            return s.kind === 'body'
+                ? { kind: 'body', reports: s.reports.length, durationMs: s.durationMs, error: (_a = s.error) !== null && _a !== void 0 ? _a : null }
+                : { kind: 'attachment', filename: s.filename, reports: s.reports.length, durationMs: s.durationMs, error: (_b = s.error) !== null && _b !== void 0 ? _b : null };
+        });
+        const sectionFailures = sectionResults.filter(s => s.error).length;
+        (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] OpenAI: finished in ${timings.openAiMs}ms (sections=${sectionResults.length}, failures=${sectionFailures}, reportsBeforeMerge=${allReports.length}, reportsAfterMerge=${reports.length})`, {
             lotNumbers: reports.map((report) => { var _a; return (_a = report === null || report === void 0 ? void 0 : report.lotNumber) !== null && _a !== void 0 ? _a : null; }),
+            sectionsBreakdown,
         });
         let statusStr = "UNMAPPED";
         const mappedReports = [];
@@ -602,10 +841,12 @@ function processTrackedEmail(messageId, opts) {
         let saveIndex = 0;
         for (const match of reportMatches) {
             saveIndex += 1;
-            const moleculeResults = Array.isArray((_k = match.report) === null || _k === void 0 ? void 0 : _k.moleculeResults)
+            const detectedMolecules = Array.isArray((_k = match.report) === null || _k === void 0 ? void 0 : _k.moleculeResults)
                 ? match.report.moleculeResults
                 : [];
-            (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] save ${saveIndex}/${reportMatches.length}: LabReport lot=${(_l = match.lotNumber) !== null && _l !== void 0 ? _l : '—'} testId=${(_m = match.testId) !== null && _m !== void 0 ? _m : '—'} molecules=${moleculeResults.length}`);
+            const expandedUndetected = expandUndetectedMolecules(match.report);
+            const totalMoleculeRows = detectedMolecules.length + expandedUndetected.length;
+            (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] save ${saveIndex}/${reportMatches.length}: LabReport lot=${(_l = match.lotNumber) !== null && _l !== void 0 ? _l : '—'} testId=${(_m = match.testId) !== null && _m !== void 0 ? _m : '—'} detected=${detectedMolecules.length} undetected=${expandedUndetected.length}`);
             const sourceAttachment = attachmentsByOriginalName.get(normalizeFilename((_o = match.report) === null || _o === void 0 ? void 0 : _o.sourceAttachmentFilename)) || null;
             const labReport = yield prisma.labReport.create({
                 data: {
@@ -621,11 +862,14 @@ function processTrackedEmail(messageId, opts) {
                     raw_ai_json: stringifyJson(match.report),
                 },
             });
-            if (moleculeResults.length > 0) {
+            if (totalMoleculeRows > 0) {
                 yield prisma.moleculeResult.createMany({
-                    data: moleculeResults.map((molecule) => mapMoleculeResult(labReport.id, molecule)),
+                    data: [
+                        ...detectedMolecules.map((molecule) => mapMoleculeResult(labReport.id, molecule, true)),
+                        ...expandedUndetected.map((molecule) => mapMoleculeResult(labReport.id, molecule, false)),
+                    ],
                 });
-                (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] save ${saveIndex}/${reportMatches.length}: inserted ${moleculeResults.length} MoleculeResult rows for labReport ${labReport.id}`);
+                (0, serverLog_1.serverLog)(`[trace=${trace}][PROCESS][${messageId}] save ${saveIndex}/${reportMatches.length}: inserted ${totalMoleculeRows} MoleculeResult rows (detected=${detectedMolecules.length}, undetected=${expandedUndetected.length}) for labReport ${labReport.id}`);
             }
         }
         timings.reportSaveMs = Date.now() - stepStartedAt;
@@ -651,6 +895,9 @@ function processTrackedEmail(messageId, opts) {
             analysis: reports,
             mappedReports,
             timings,
+            sectionsBreakdown,
+            sectionFailures,
+            skippedNonPdfAttachments,
             processedLabelApplied,
             processedLabelError,
         };
