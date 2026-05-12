@@ -320,18 +320,44 @@ function extractPdfText(filename_1, buffer_1) {
         }
     });
 }
-// Initialize the Gmail API Client
-function getGmailClient() {
+/** Gmail OAuth: either files next to app root (see paths above) or JSON in env (for Hostinger / PaaS). */
+function loadGmailCredentialsAndToken() {
+    var _a, _b;
+    const envCred = (_a = process.env.GMAIL_CREDENTIALS_JSON) === null || _a === void 0 ? void 0 : _a.trim();
+    const envToken = (_b = process.env.GMAIL_TOKEN_JSON) === null || _b === void 0 ? void 0 : _b.trim();
+    if (envCred && envToken) {
+        try {
+            return { credentials: JSON.parse(envCred), token: JSON.parse(envToken) };
+        }
+        catch (e) {
+            (0, serverLog_1.serverLog)('[GMAIL] Invalid GMAIL_CREDENTIALS_JSON or GMAIL_TOKEN_JSON (must be valid JSON):', e);
+            return null;
+        }
+    }
     if (!fs_1.default.existsSync(CREDENTIALS_PATH) || !fs_1.default.existsSync(TOKEN_PATH)) {
         return null;
     }
     const content = fs_1.default.readFileSync(CREDENTIALS_PATH, 'utf8');
-    const credentials = JSON.parse(content);
+    const tokenRaw = fs_1.default.readFileSync(TOKEN_PATH, 'utf8');
+    try {
+        return { credentials: JSON.parse(content), token: JSON.parse(tokenRaw) };
+    }
+    catch (e) {
+        (0, serverLog_1.serverLog)('[GMAIL] Failed to parse credentials.json or token.json:', e);
+        return null;
+    }
+}
+// Initialize the Gmail API Client
+function getGmailClient() {
+    const loaded = loadGmailCredentialsAndToken();
+    if (!loaded) {
+        return null;
+    }
+    const { credentials, token } = loaded;
     const { client_secret, client_id, redirect_uris } = credentials.installed || credentials.web;
     const redirect_uri = (redirect_uris && redirect_uris.length > 0) ? redirect_uris[0] : 'http://localhost';
     const oAuth2Client = new googleapis_1.google.auth.OAuth2(client_id, client_secret, redirect_uri);
-    const token = fs_1.default.readFileSync(TOKEN_PATH, 'utf8');
-    oAuth2Client.setCredentials(JSON.parse(token));
+    oAuth2Client.setCredentials(token);
     return googleapis_1.google.gmail({ version: 'v1', auth: oAuth2Client });
 }
 // Helper to create a base64url encoded MIME email
@@ -352,7 +378,7 @@ function sendTestRequestEmail(testId, lotNumber, labName, toEmail) {
     return __awaiter(this, void 0, void 0, function* () {
         const gmail = getGmailClient();
         if (!gmail) {
-            throw new Error("Gmail client not configured. Missing credentials.json or token.json");
+            throw new Error('Gmail client not configured. Add credentials.json and token.json next to dist/, or set GMAIL_CREDENTIALS_JSON and GMAIL_TOKEN_JSON (see .env.example).');
         }
         try {
             const profile = yield gmail.users.getProfile({ userId: 'me' });
@@ -386,7 +412,7 @@ function pollForReplies(threadId) {
         var _a, _b;
         const gmail = getGmailClient();
         if (!gmail) {
-            throw new Error("Gmail client not configured. Missing credentials.json or token.json");
+            throw new Error('Gmail client not configured. Add credentials.json and token.json next to dist/, or set GMAIL_CREDENTIALS_JSON and GMAIL_TOKEN_JSON (see .env.example).');
         }
         try {
             // Fetch the thread

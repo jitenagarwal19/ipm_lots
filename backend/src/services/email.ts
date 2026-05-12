@@ -328,21 +328,47 @@ export async function extractPdfText(
   }
 }
 
-// Initialize the Gmail API Client
-function getGmailClient() {
+/** Gmail OAuth: either files next to app root (see paths above) or JSON in env (for Hostinger / PaaS). */
+function loadGmailCredentialsAndToken(): { credentials: any; token: any } | null {
+  const envCred = process.env.GMAIL_CREDENTIALS_JSON?.trim();
+  const envToken = process.env.GMAIL_TOKEN_JSON?.trim();
+  if (envCred && envToken) {
+    try {
+      return { credentials: JSON.parse(envCred), token: JSON.parse(envToken) };
+    } catch (e) {
+      serverLog('[GMAIL] Invalid GMAIL_CREDENTIALS_JSON or GMAIL_TOKEN_JSON (must be valid JSON):', e);
+      return null;
+    }
+  }
+
   if (!fs.existsSync(CREDENTIALS_PATH) || !fs.existsSync(TOKEN_PATH)) {
     return null;
   }
-  
+
   const content = fs.readFileSync(CREDENTIALS_PATH, 'utf8');
-  const credentials = JSON.parse(content);
+  const tokenRaw = fs.readFileSync(TOKEN_PATH, 'utf8');
+  try {
+    return { credentials: JSON.parse(content), token: JSON.parse(tokenRaw) };
+  } catch (e) {
+    serverLog('[GMAIL] Failed to parse credentials.json or token.json:', e);
+    return null;
+  }
+}
+
+// Initialize the Gmail API Client
+function getGmailClient() {
+  const loaded = loadGmailCredentialsAndToken();
+  if (!loaded) {
+    return null;
+  }
+
+  const { credentials, token } = loaded;
   const { client_secret, client_id, redirect_uris } = credentials.installed || credentials.web;
-  
+
   const redirect_uri = (redirect_uris && redirect_uris.length > 0) ? redirect_uris[0] : 'http://localhost';
   const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uri);
-  const token = fs.readFileSync(TOKEN_PATH, 'utf8');
-  oAuth2Client.setCredentials(JSON.parse(token));
-  
+  oAuth2Client.setCredentials(token);
+
   return google.gmail({ version: 'v1', auth: oAuth2Client });
 }
 
@@ -366,7 +392,9 @@ export async function sendTestRequestEmail(testId: string, lotNumber: string, la
   const gmail = getGmailClient();
   
   if (!gmail) {
-    throw new Error("Gmail client not configured. Missing credentials.json or token.json");
+    throw new Error(
+      'Gmail client not configured. Add credentials.json and token.json next to dist/, or set GMAIL_CREDENTIALS_JSON and GMAIL_TOKEN_JSON (see .env.example).'
+    );
   }
 
   try {
@@ -403,7 +431,9 @@ export async function sendTestRequestEmail(testId: string, lotNumber: string, la
 export async function pollForReplies(threadId: string) {
   const gmail = getGmailClient();
   if (!gmail) {
-    throw new Error("Gmail client not configured. Missing credentials.json or token.json");
+    throw new Error(
+      'Gmail client not configured. Add credentials.json and token.json next to dist/, or set GMAIL_CREDENTIALS_JSON and GMAIL_TOKEN_JSON (see .env.example).'
+    );
   }
 
   try {
