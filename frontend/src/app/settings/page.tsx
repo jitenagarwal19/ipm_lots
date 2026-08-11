@@ -12,6 +12,27 @@ import { getApiBaseUrl } from "@/lib/utils";
 
 const API_BASE_URL = `${getApiBaseUrl()}/settings`;
 
+/** Rows rendered before the grid asks you to filter instead. */
+const LIMIT_ROWS_SHOWN = 100;
+
+const LIMIT_KIND_LABEL: Record<string, string> = {
+  VALUE: "with an MRL",
+  AT_LOD: "at LOD",
+  NOT_REQUIRED: "exempt",
+  PROHIBITED: "prohibited",
+};
+
+/**
+ * Exempt and prohibited limits store a sentinel, not a published number, so the
+ * raw `limit_value` must never be printed for those kinds.
+ */
+function formatLimit(limit: any): string {
+  if (limit.limit_kind === "NOT_REQUIRED") return "No MRL required";
+  if (limit.limit_kind === "PROHIBITED") return "Must not be detected";
+  if (limit.limit_kind === "AT_LOD") return `${limit.limit_value} mg/kg *`;
+  return `${limit.limit_value} mg/kg`;
+}
+
 export default function SettingsPage() {
   const [labs, setLabs] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -417,6 +438,9 @@ function ComplianceSettings({ products }: { products: any[] }) {
   const [limitMoleculeId, setLimitMoleculeId] = useState("");
   const [limitValue, setLimitValue] = useState("");
   const [limitNotes, setLimitNotes] = useState("");
+  // A full national register is ~650 rows per product, so the grid needs a
+  // filter and a cap or it becomes an unscrollable wall.
+  const [limitFilter, setLimitFilter] = useState("");
   const [isMoleculeDialogOpen, setIsMoleculeDialogOpen] = useState(false);
   const [newMoleculeName, setNewMoleculeName] = useState("");
   const [newMoleculeCas, setNewMoleculeCas] = useState("");
@@ -833,29 +857,82 @@ function ComplianceSettings({ products }: { products: any[] }) {
                 </DialogContent>
               </Dialog>
 
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-zinc-800">
-                    <TableHead className="text-zinc-400">Molecule</TableHead>
-                    <TableHead className="text-zinc-400">Limit</TableHead>
-                    <TableHead className="text-zinc-400">Notes</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {profile.limits?.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-zinc-500">No molecule-specific limits yet. The default limit will apply.</TableCell></TableRow>}
-                  {profile.limits?.map((limit: any) => (
-                    <TableRow key={limit.id} className="border-zinc-800">
-                      <TableCell className="text-zinc-200">{limit.molecule?.name || "-"}</TableCell>
-                      <TableCell className="text-zinc-400">{limit.limit_value} mg/kg</TableCell>
-                      <TableCell className="text-zinc-400">{limit.notes || "-"}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => { setLimitEditId(limit.id); setLimitMoleculeId(limit.molecule_id); setLimitValue(String(limit.limit_value)); setLimitNotes(limit.notes || ""); }} className="text-blue-400">Edit</Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              {(() => {
+                const all = (profile.limits ?? []) as any[];
+                const needle = limitFilter.trim().toLowerCase();
+                const matches = needle
+                  ? all.filter((l) =>
+                      `${l.molecule?.name ?? ""} ${l.residue_definition ?? ""} ${l.regulation_ref ?? ""}`
+                        .toLowerCase()
+                        .includes(needle)
+                    )
+                  : all;
+                const shown = matches.slice(0, LIMIT_ROWS_SHOWN);
+                const kinds = all.reduce<Record<string, number>>((acc, l) => {
+                  const k = l.limit_kind || "VALUE";
+                  acc[k] = (acc[k] ?? 0) + 1;
+                  return acc;
+                }, {});
+
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <Input
+                        value={limitFilter}
+                        onChange={(e) => setLimitFilter(e.target.value)}
+                        placeholder="Filter by molecule, residue definition or regulation…"
+                        className="max-w-md bg-zinc-950 border-zinc-700"
+                      />
+                      <p className="text-xs text-zinc-500">
+                        {all.length} limit{all.length === 1 ? "" : "s"} on file
+                        {Object.keys(kinds).length > 0 && (
+                          <> — {Object.entries(kinds).map(([k, v]) => `${v} ${LIMIT_KIND_LABEL[k] ?? k}`).join(", ")}</>
+                        )}
+                      </p>
+                    </div>
+
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-zinc-800">
+                          <TableHead className="text-zinc-400">Molecule</TableHead>
+                          <TableHead className="text-zinc-400">Limit</TableHead>
+                          <TableHead className="text-zinc-400">In force</TableHead>
+                          <TableHead className="text-zinc-400">Regulation</TableHead>
+                          <TableHead className="text-zinc-400">NABL</TableHead>
+                          <TableHead />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {all.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-zinc-500">No molecule-specific limits yet. The default limit will apply.</TableCell></TableRow>}
+                        {all.length > 0 && matches.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-zinc-500">No limit matches “{limitFilter}”.</TableCell></TableRow>}
+                        {shown.map((limit: any) => (
+                          <TableRow key={limit.id} className="border-zinc-800">
+                            <TableCell className="text-zinc-200" title={limit.residue_definition || undefined}>
+                              {limit.molecule?.name || "-"}
+                              {limit.verification_status === "PROXY_UNVERIFIED" && (
+                                <span className="ml-1.5 text-amber-500" title={limit.notes || "Proxy commodity mapping — verify before relying on it"}>⚠</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-zinc-400">{formatLimit(limit)}</TableCell>
+                            <TableCell className="text-zinc-500">{limit.enforcement_date ? new Date(limit.enforcement_date).toLocaleDateString("en-GB") : "-"}</TableCell>
+                            <TableCell className="text-zinc-500">{limit.regulation_ref || "-"}</TableCell>
+                            <TableCell className="text-zinc-500">{limit.nabl === true ? "Yes" : limit.nabl === false ? "No" : "-"}</TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="sm" onClick={() => { setLimitEditId(limit.id); setLimitMoleculeId(limit.molecule_id); setLimitValue(String(limit.limit_value)); setLimitNotes(limit.notes || ""); }} className="text-blue-400">Edit</Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    {matches.length > shown.length && (
+                      <p className="text-center text-xs text-zinc-500">
+                        Showing {shown.length} of {matches.length}. Use the filter to narrow it down.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
 

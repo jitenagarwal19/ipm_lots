@@ -264,6 +264,46 @@ model ComplianceLimit {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
+  // ── Regulatory detail carried from the official register.
+  // All nullable/defaulted so pre-existing hand-entered rows stay valid.
+
+  /// VALUE | AT_LOD | NOT_REQUIRED | PROHIBITED.
+  /// A bare `limit_value` cannot distinguish "0.05 because that is the MRL" from
+  /// "0.05 because that is the limit of determination and no use is approved",
+  /// nor represent an Annex IV exemption at all. See NOT_REQUIRED_SENTINEL.
+  limit_kind          String    @default("VALUE")
+  /// The limit cell exactly as published, e.g. "0.05 *", "No MRL Required".
+  source_value        String?
+  /// Full published residue definition. The molecule name is the short label;
+  /// the limit is legally set on this text (often a sum of components).
+  residue_definition  String?
+  is_sum_definition   Boolean   @default(false)
+  /// When the limit came into force — needed to reconstruct a past decision.
+  enforcement_date    DateTime?
+  /// Citation, e.g. "GB MRL 2025/011", "Commission Regulation 149/2008".
+  regulation_ref      String?
+  footnotes           String?
+  /// Register's own flags: is the residue analytically feasible, and is a
+  /// NABL-accredited method available. Drives what we can actually ask a lab for.
+  /// Null means the source cell was neither y nor n — unknown, never assumed.
+  feasibility         Boolean?
+  nabl                Boolean?
+  /// Qualifier from the flag cell, e.g. "y (as CS2)" — dithiocarbamates are
+  /// measured as CS2, so this says what the lab actually reports.
+  feasibility_note    String?
+  nabl_note           String?
+  /// Territory the limit applies to, as stated by the source ("GB").
+  applies_to          String?
+  /// Commodity named on the source sheet. Differs from our product name when the
+  /// mapping is a proxy (e.g. GB "Caraway" used for Ajwain) — that is a legal
+  /// judgment and must stay visible.
+  source_commodity    String?
+  source_file         String?
+  /// Export date of the source sheet — provenance and staleness.
+  snapshot_date       DateTime?
+  /// VERIFIED | IMPORTED_UNVERIFIED | PROXY_UNVERIFIED | UNVERIFIED
+  verification_status String    @default("UNVERIFIED")
+
   @@unique([profile_id, molecule_id])
   @@unique([standard_id, molecule_id, product_id])
 }

@@ -9,6 +9,35 @@ const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage() });
 const COMPLIANCE_UNIT = 'mg/kg';
 
+/**
+ * Fields to clear when a limit is set by hand, through the UI or a plain CSV.
+ *
+ * A typed-in number is an ordinary MRL. Anything the row previously carried from
+ * an official register — its kind, its published text, its citation, its
+ * enforcement date — described a *different* value and must not survive the
+ * edit. The dangerous one is `limit_kind`: left at NOT_REQUIRED behind a
+ * hand-entered number, the row renders "No MRL required" and passes every
+ * result, whatever was typed.
+ */
+const MANUAL_ENTRY_FIELDS = {
+  limit_kind: 'VALUE',
+  source_value: null,
+  residue_definition: null,
+  is_sum_definition: false,
+  enforcement_date: null,
+  regulation_ref: null,
+  footnotes: null,
+  feasibility: null,
+  feasibility_note: null,
+  nabl: null,
+  nabl_note: null,
+  applies_to: null,
+  source_commodity: null,
+  source_file: null,
+  snapshot_date: null,
+  verification_status: 'MANUAL_ENTRY',
+} as const;
+
 function requiredString(value: unknown, field: string) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`${field} is required.`);
@@ -202,6 +231,7 @@ async function upsertProfileLimit(client: any, input: {
         limit_value: input.limit_value,
         unit: COMPLIANCE_UNIT,
         notes: input.notes,
+        ...MANUAL_ENTRY_FIELDS,
       },
       include: { standard: true, molecule: true, product: true },
     });
@@ -216,6 +246,7 @@ async function upsertProfileLimit(client: any, input: {
       limit_value: input.limit_value,
       unit: COMPLIANCE_UNIT,
       notes: input.notes,
+      ...MANUAL_ENTRY_FIELDS,
     },
     include: { standard: true, molecule: true, product: true },
   });
@@ -908,6 +939,7 @@ async function upsertComplianceLimit(input: {
         limit_value: input.limit_value,
         unit: COMPLIANCE_UNIT,
         notes: input.notes,
+        ...MANUAL_ENTRY_FIELDS,
       },
       include: { standard: true, molecule: true, product: true },
     });
@@ -917,6 +949,7 @@ async function upsertComplianceLimit(input: {
       ...input,
       profile_id: profile?.id ?? null,
       unit: COMPLIANCE_UNIT,
+      ...MANUAL_ENTRY_FIELDS,
     },
     include: { standard: true, molecule: true, product: true },
   });

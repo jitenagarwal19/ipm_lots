@@ -106,14 +106,7 @@ async function resolveLimit(client: any, standard: any, moleculeId: string | nul
     if (profile) {
       if (moleculeId) {
         const profileLimit = (profile.limits || []).find((limit: any) => limit.molecule_id === moleculeId);
-        if (profileLimit) {
-          return {
-            value: profileLimit.limit_value,
-            unit: profileLimit.unit,
-            source: 'PROFILE',
-            fallbackUsed: false,
-          };
-        }
+        if (profileLimit) return fromStoredLimit(profileLimit, 'PROFILE');
       }
 
       return {
@@ -121,6 +114,9 @@ async function resolveLimit(client: any, standard: any, moleculeId: string | nul
         unit: profile.fallback_unit || DEFAULT_UNIT,
         source: 'PROFILE_DEFAULT',
         fallbackUsed: true,
+        kind: 'VALUE',
+        sourceValue: null,
+        residueDefinition: null,
       };
     }
   }
@@ -130,27 +126,13 @@ async function resolveLimit(client: any, standard: any, moleculeId: string | nul
       const productLimit = await client.complianceLimit.findFirst({
         where: { standard_id: standard.id, molecule_id: moleculeId, product_id: productId },
       });
-      if (productLimit) {
-        return {
-          value: productLimit.limit_value,
-          unit: productLimit.unit,
-          source: 'PRODUCT',
-          fallbackUsed: false,
-        };
-      }
+      if (productLimit) return fromStoredLimit(productLimit, 'PRODUCT');
     }
 
     const globalLimit = await client.complianceLimit.findFirst({
       where: { standard_id: standard.id, molecule_id: moleculeId, product_id: null },
     });
-    if (globalLimit) {
-      return {
-        value: globalLimit.limit_value,
-        unit: globalLimit.unit,
-        source: 'STANDARD',
-        fallbackUsed: false,
-      };
-    }
+    if (globalLimit) return fromStoredLimit(globalLimit, 'STANDARD');
   }
 
   return {
@@ -158,7 +140,41 @@ async function resolveLimit(client: any, standard: any, moleculeId: string | nul
     unit: standard.fallback_unit || DEFAULT_UNIT,
     source: 'FALLBACK',
     fallbackUsed: true,
+    kind: 'VALUE',
+    sourceValue: null,
+    residueDefinition: null,
   };
+}
+
+/**
+ * A stored limit carries a kind alongside its number. `NOT_REQUIRED` (Annex IV
+ * exempt) and `PROHIBITED` hold a sentinel rather than a published value, so the
+ * kind must travel with it — otherwise the UI prints 1000000000 mg/kg and a
+ * reviewer cannot tell an exemption from a real limit.
+ */
+function fromStoredLimit(limit: any, source: string) {
+  return {
+    value: limit.limit_value,
+    unit: limit.unit,
+    source,
+    fallbackUsed: false,
+    kind: (limit.limit_kind as string) || 'VALUE',
+    sourceValue: (limit.source_value as string) ?? null,
+    residueDefinition: (limit.residue_definition as string) ?? null,
+  };
+}
+
+/**
+ * Verdict for one measured residue against one resolved limit.
+ * Returns null when we cannot tell — never a guess.
+ */
+function judge(kind: string, measuredValue: number | null, limitValue: number, isDetected: boolean) {
+  // No MRL applies (Annex IV): any level is lawful, even without a number.
+  if (kind === 'NOT_REQUIRED') return true;
+  // Banned outright: presence alone fails, whatever the number.
+  if (kind === 'PROHIBITED') return !isDetected;
+  if (measuredValue === null) return null;
+  return measuredValue <= limitValue;
 }
 
 export async function buildCompliancePreview(client: any, reportId: string, standardId: string) {
@@ -201,9 +217,12 @@ export async function buildCompliancePreview(client: any, reportId: string, stan
       limitValue: limit.value,
       limitUnit: limit.unit,
       limitSource: limit.source,
+      limitKind: limit.kind,
+      limitSourceValue: limit.sourceValue,
+      residueDefinition: limit.residueDefinition,
       fallbackUsed: limit.fallbackUsed,
       isDetected: true,
-      isCompliant: measuredValue === null ? null : measuredValue <= limit.value,
+      isCompliant: judge(limit.kind, measuredValue, limit.value, true),
     });
   }
 
