@@ -40,6 +40,9 @@ export default function RootLayout({
             <Link href="/reviews" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
               Report Review
             </Link>
+            <Link href="/limits" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
+              MRL Lookup
+            </Link>
             <Link href="/email-logs" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
               Email Logs
             </Link>

@@ -59,6 +59,7 @@ import emailRoutes from './routes/emails';
 import ailogsRoutes from './routes/ailogs';
 import reviewRoutes from './routes/reviews';
 import lotRoutes from './routes/lots';
+import limitRoutes from './routes/limits';
 
 app.use('/api/settings', settingsRoutes);
 app.use('/api/tests', testsRoutes);
@@ -67,6 +68,7 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/ailogs', ailogsRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/lots', lotRoutes);
+app.use('/api/limits', limitRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
