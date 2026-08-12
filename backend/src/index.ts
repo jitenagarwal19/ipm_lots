@@ -6,6 +6,7 @@ import path from 'path';
 import { PrismaClient } from '@prisma/client';
 import { requestIdMiddleware } from './middleware/requestId';
 import { serverLog } from './lib/serverLog';
+import { UPLOADS_DIR } from './lib/paths';
 
 dotenv.config({ override: true });
 
@@ -14,7 +15,7 @@ serverLog('BOOT IPM backend loading pid=%s cwd=%s', process.pid, process.cwd());
 const app = express();
 const prisma = new PrismaClient();
 const port = process.env.PORT || 4000;
-const uploadsPath = path.join(process.cwd(), 'uploads');
+const uploadsPath = UPLOADS_DIR;
 
 app.use(requestIdMiddleware);
 
@@ -48,9 +49,6 @@ app.use(
 );
 app.use(express.json());
 
-// Serve uploads
-app.use('/uploads', express.static(uploadsPath));
-
 // Routes
 import settingsRoutes from './routes/settings';
 import testsRoutes from './routes/tests';
@@ -60,6 +58,25 @@ import ailogsRoutes from './routes/ailogs';
 import reviewRoutes from './routes/reviews';
 import lotRoutes from './routes/lots';
 import limitRoutes from './routes/limits';
+import authRoutes from './routes/auth';
+import { loadSession, requireAuth } from './middleware/requireAuth';
+import { rateLimit } from './middleware/rateLimit';
+
+// Trust the reverse proxy so req.ip and secure cookies work behind Nginx.
+if (process.env.TRUST_PROXY !== 'false') app.set('trust proxy', 1);
+
+// Resolve the session, then refuse anything that is not explicitly public.
+// Registered before every route below, including static uploads — lab reports
+// are the evidence behind compliance decisions and are not public files.
+app.use(loadSession);
+// Per-IP ceiling on the unauthenticated surface. The per-email resend gap and
+// attempt limit live in the auth routes; this stops one source working through
+// many addresses.
+app.use('/api/auth', rateLimit({ windowMs: 15 * 60_000, max: 60 }), authRoutes);
+app.use(requireAuth);
+
+// Serve uploads (authenticated — see above)
+app.use('/uploads', express.static(uploadsPath));
 
 app.use('/api/settings', settingsRoutes);
 app.use('/api/tests', testsRoutes);

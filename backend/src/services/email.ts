@@ -9,12 +9,13 @@ import { analyzeLabReportSection } from './openai';
 import { pLimit } from '../lib/pLimit';
 import { PrismaClient } from '@prisma/client';
 import { serverLog } from '../lib/serverLog';
+import { UPLOADS_DIR } from '../lib/paths';
 
 const prisma = new PrismaClient();
 
 const TOKEN_PATH = path.join(__dirname, '../../token.json');
 const CREDENTIALS_PATH = path.join(__dirname, '../../credentials.json');
-const UPLOADS_PATH = path.join(process.cwd(), 'uploads');
+const UPLOADS_PATH = UPLOADS_DIR;
 const TRACKED_EMAIL_LIMIT = Number(process.env.TRACKED_EMAIL_LIMIT || 10);
 const PROCESSED_GMAIL_LABEL = process.env.PROCESSED_GMAIL_LABEL || 'processed';
 const OPENAI_MAX_ATTACHMENT_CHARS = Number(process.env.OPENAI_MAX_ATTACHMENT_CHARS || 45_000);
@@ -386,6 +387,32 @@ function makeEmail(to: string, from: string, subject: string, body: string) {
   ].join('\n');
 
   return Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Send a plain system email (sign-in codes, sign-in notices) through the same
+ * Gmail account the app already uses. Returns false rather than throwing when
+ * Gmail is not configured, so a missing integration cannot take down login —
+ * the caller logs the code instead, which is what makes first-run setup possible.
+ */
+export async function sendSystemEmail(toEmail: string, subject: string, htmlBody: string): Promise<boolean> {
+  const gmail = getGmailClient();
+  if (!gmail) {
+    serverLog('[GMAIL SERVICE] Not configured; cannot send "%s" to %s', subject, toEmail);
+    return false;
+  }
+  try {
+    const profile = await gmail.users.getProfile({ userId: 'me' });
+    const fromEmail = profile.data.emailAddress || 'me';
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: makeEmail(toEmail, fromEmail, subject, htmlBody) },
+    });
+    return true;
+  } catch (error) {
+    serverLog('[GMAIL SERVICE] Failed to send "%s" to %s:', subject, toEmail, error);
+    return false;
+  }
 }
 
 export async function sendTestRequestEmail(testId: string, lotNumber: string, labName: string, toEmail: string) {

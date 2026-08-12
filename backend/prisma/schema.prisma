@@ -366,6 +366,38 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+/// A pending email sign-in code. One row per email — requesting a new code
+/// replaces the old one, so a code can never be used twice.
+/// The code itself is never stored, only a scrypt hash.
+model LoginCode {
+  email      String   @id
+  code_hash  String
+  expires_at DateTime
+  /// Wrong guesses. At AUTH_MAX_ATTEMPTS the row stops accepting any code,
+  /// which is what makes a 6-digit secret safe.
+  attempts   Int      @default(0)
+  sent_at    DateTime @default(now())
+  createdAt  DateTime @default(now())
+}
+
+/// An active browser session. The cookie holds a 256-bit random token; only its
+/// SHA-256 is stored, so a database leak cannot be replayed as a login.
+model Session {
+  id         String   @id @default(uuid())
+  token_hash String   @unique
+  email      String
+  expires_at DateTime
+  /// Recorded for the sign-in notification and for revoking a suspicious session.
+  ip         String?
+  user_agent String?
+  last_seen  DateTime @default(now())
+  revoked_at DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([email])
+  @@index([expires_at])
+}
+
 model AILog {
   id                String   @id @default(uuid())
   message_id        String?

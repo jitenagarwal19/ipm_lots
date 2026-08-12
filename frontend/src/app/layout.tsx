@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import Link from "next/link";
+import { SidebarNav } from "@/components/SidebarNav";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,51 +17,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} min-h-screen bg-zinc-950 text-zinc-50 flex flex-col md:flex-row antialiased`}>
-        {/* Sidebar */}
-        <aside className="w-full md:w-64 border-b md:border-b-0 md:border-r border-zinc-800 bg-zinc-900/50 p-6 flex flex-col gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded bg-emerald-500 flex items-center justify-center font-bold text-zinc-950">
-              IPM
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight">Traceability</h1>
-          </div>
-          
-          <nav className="flex flex-col gap-2">
-            <Link href="/" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              Dashboard
-            </Link>
-            <Link href="/tests" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              Tests & Lots
-            </Link>
-            <Link href="/mapping" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              Email Mapping
-            </Link>
-            <Link href="/reviews" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              Report Review
-            </Link>
-            <Link href="/limits" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              MRL Lookup
-            </Link>
-            <Link href="/email-logs" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              Email Logs
-            </Link>
-            <Link href="/tracked-emails" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              Tracked Inbox
-            </Link>
-            <Link href="/ai-logs" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              AI Logs
-            </Link>
-            <Link href="/settings" className="px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors text-sm font-medium text-zinc-400 hover:text-zinc-50">
-              Settings
-            </Link>
-          </nav>
-        </aside>
+      <body
+        className={`${inter.className} flex min-h-screen flex-col bg-zinc-950 text-zinc-50 antialiased md:flex-row`}
+      >
+        {/* Client component: knows the current route, hides itself on /login,
+            and shows who is signed in. */}
+        <SidebarNav />
 
-        {/* Main Content */}
-        <main className="flex-1 p-6 md:p-12 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto p-6 md:p-12">{children}</main>
       </body>
     </html>
   );
