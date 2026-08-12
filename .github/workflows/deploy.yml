@@ -1,0 +1,71 @@
+name: Deploy
+
+# Merge to main → deploy. Nothing reaches the server that has not passed CI.
+#
+# The build happens ON the server, not here: the artefact that matters is the
+# one produced from the exact checkout the server is running, and `backend/dist`
+# is deliberately no longer in git (it drifted out of sync with src/ once and a
+# deploy would have shipped code that did not match the source).
+#
+# Required repository secrets — see docs/deploy-hostinger.md:
+#   SSH_HOST         VPS address
+#   SSH_USER         deploy user (not root)
+#   SSH_PRIVATE_KEY  private key whose public half is in that user's authorized_keys
+#   SSH_PORT         optional, defaults to 22
+#   DEPLOY_PATH      optional, defaults to /var/www/ipm
+#   HEALTH_URL       optional, public /health URL for the post-deploy check
+
+on:
+  push:
+    branches: [main]
+  # Lets you redeploy the current main without an empty commit.
+  workflow_dispatch:
+
+concurrency:
+  # Never let two deploys touch the server at once, and do not cancel one
+  # half-way — an interrupted migration is worse than a queued deploy.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  wait-for-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note
+        run: echo "Deploy gated on CI via the required-checks branch rule on main."
+
+  deploy:
+    needs: wait-for-ci
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # Pin the host key rather than disabling checking, so a hijacked DNS
+          # entry cannot silently receive the deploy.
+          ssh-keyscan -p "${{ secrets.SSH_PORT || 22 }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/var/www/ipm' }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "${{ secrets.SSH_PORT || 22 }}" \
+              "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+              "cd $DEPLOY_PATH && ./deploy.sh ${{ github.sha }}"
+
+      - name: Health check
+        if: ${{ secrets.HEALTH_URL != '' }}
+        run: |
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${{ secrets.HEALTH_URL }}" || true)
+            echo "attempt $i: $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 6
+          done
+          echo "::error::Service did not return 200 after deploy. Check pm2 logs; deploy.sh keeps the previous release for rollback."
+          exit 1

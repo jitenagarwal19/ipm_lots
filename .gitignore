@@ -11,3 +11,11 @@ backend/credentials.json
 frontend/node_modules/
 frontend/.next/
 
+# Build output — built on the server at deploy time, never committed.
+# It was tracked once and drifted out of sync with src/, which meant a deploy
+# could ship code that did not match the source.
+backend/dist/
+backend/coverage/
+
+# Local Postgres/Prisma scratch
+backend/prisma/dev.db

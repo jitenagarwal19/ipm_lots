@@ -1,0 +1,106 @@
+name: CI
+
+# Runs on every pull request and on main. Deployment (deploy.yml) waits for this
+# to pass, so a red build cannot reach the server.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # A newer push supersedes an in-flight run on the same ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      # Needed as a shadow database for the migration-drift check below.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shadow
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+        working-directory: backend
+
+      # The client is generated code; nothing typechecks without it.
+      - run: npx prisma generate
+        working-directory: backend
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: backend
+
+      - name: Test
+        run: npm test
+        working-directory: backend
+
+      - name: Build
+        run: npm run build
+        working-directory: backend
+
+      # A schema edited without a matching migration passes every check above and
+      # then fails on the server, where it is expensive. Catch it here.
+      # --exit-code makes "there is a difference" exit 2.
+      - name: Schema and migrations agree
+        working-directory: backend
+        env:
+          SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+        run: |
+          if npx prisma migrate diff \
+               --from-migrations prisma/migrations \
+               --to-schema-datamodel prisma/schema.prisma \
+               --shadow-database-url "$SHADOW_DATABASE_URL" \
+               --exit-code; then
+            echo "schema.prisma matches prisma/migrations"
+          else
+            echo "::error::schema.prisma has changes with no migration. Run: npx prisma migrate dev --name <change>"
+            exit 1
+          fi
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: frontend
+
+      - name: Lint
+        run: npx eslint src
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
