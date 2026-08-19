@@ -97,8 +97,8 @@ export function hashSessionToken(token: string): string {
 /**
  * Cookie options.
  *
- * `secure` follows NODE_ENV: a Secure cookie is dropped over plain http, which
- * would make local development silently unable to log in.
+ * `secure` comes from cookieSecure() below — see the warning there before
+ * turning it off.
  *
  * SameSite=Lax is safe because the browser talks to the API on its own origin —
  * Next rewrites /api to the backend in development, Nginx does it in production.
@@ -109,10 +109,30 @@ export function sessionCookieOptions(maxAgeMs: number = SESSION_TTL_MS) {
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure(),
     path: '/',
     maxAge: maxAgeMs,
   };
+}
+
+/**
+ * Whether to mark the session cookie Secure.
+ *
+ * Defaults to on in production, which is right the moment there is a
+ * certificate. It is separately overridable because a Secure cookie is silently
+ * discarded over plain http — so a production build reached by raw IP would
+ * accept the sign-in code, set a cookie the browser throws away, and bounce the
+ * user back to /login with no error anywhere. That failure is invisible and
+ * costs an afternoon to find.
+ *
+ * COOKIE_SECURE=false is therefore allowed, and logged loudly, for IP-based UAT
+ * only. Set it back to true (or remove it) the moment TLS is in front.
+ */
+export function cookieSecure(): boolean {
+  const override = process.env.COOKIE_SECURE;
+  if (override === 'false') return false;
+  if (override === 'true') return true;
+  return process.env.NODE_ENV === 'production';
 }
 
 /** Client IP, preferring the proxy headers Nginx and Cloudflare set. */

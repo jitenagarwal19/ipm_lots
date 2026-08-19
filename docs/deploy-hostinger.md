@@ -1,6 +1,7 @@
 # Deploying to Hostinger — plan
 
-Status: proposal. Nothing below has been executed.
+Status: the app side is done and pushed. The server side is written but has not
+yet run against a real VPS.
 
 ---
 
@@ -267,6 +268,59 @@ Three deliberate choices:
 
 **Untested until the VPS exists.** The YAML is valid and `deploy.sh` passes
 `bash -n`, but no run has touched a real server.
+
+---
+
+## 5c. Deploying today, on the raw IP
+
+Hostinger confirms PostgreSQL is **VPS-only** — Shared and Cloud plans are
+MySQL-only, and this app is Postgres-bound (provider, Postgres-dialect
+migrations, and `mode: 'insensitive'` in four queries, which MySQL rejects). So
+the VPS is not a preference here, it is the requirement.
+
+On the server, once:
+
+```bash
+sudo bash deploy/provision-vps.sh
+```
+
+Installs Node 22, PostgreSQL, Redis, Nginx, PM2; creates the app user,
+`/var/ipm/{uploads,backups}`, a database role with a generated password, and a
+firewall that allows only SSH and web. Postgres and Redis stay bound to
+localhost. The script prints the `DATABASE_URL` once — capture it.
+
+Then follow the steps it prints: clone, write `backend/.env`, `./deploy.sh`,
+`pm2 start ecosystem.config.js`.
+
+### The one trap with no TLS
+
+`NODE_ENV=production` marks the session cookie `Secure`, and a browser silently
+discards a Secure cookie over plain `http://`. The symptom is nasty: the code is
+accepted, the server sets a cookie the browser throws away, and the user lands
+back on `/login` with no error in any log.
+
+For IP-only UAT, set **`COOKIE_SECURE=false`** in `backend/.env`. The API logs a
+warning on every boot while it is set, so it cannot quietly become permanent.
+Remove it the moment `certbot` has run.
+
+Until then the session cookie travels in clear text — acceptable on a trusted
+network for UAT, not acceptable once real people use it from outside.
+
+### Moving the existing data
+
+```bash
+# on the laptop
+pg_dump "postgresql://jitenagarwal@localhost:5432/ipm_lots" -Fc -f ipm.dump
+tar czf uploads.tar.gz -C backend uploads
+scp ipm.dump uploads.tar.gz ipm@<VPS_IP>:/tmp/
+
+# on the VPS
+pg_restore -d "$DATABASE_URL" --no-owner --clean --if-exists /tmp/ipm.dump
+tar xzf /tmp/uploads.tar.gz -C /var/ipm --strip-components=1
+```
+
+Then confirm the restore actually landed — 5,937 compliance limits and 649
+molecules — before trusting it.
 
 ---
 

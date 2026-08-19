@@ -61,9 +61,20 @@ import limitRoutes from './routes/limits';
 import authRoutes from './routes/auth';
 import { loadSession, requireAuth } from './middleware/requireAuth';
 import { rateLimit } from './middleware/rateLimit';
+import { cookieSecure } from './lib/auth';
 
 // Trust the reverse proxy so req.ip and secure cookies work behind Nginx.
 if (process.env.TRUST_PROXY !== 'false') app.set('trust proxy', 1);
+
+// An insecure session cookie in production is a deliberate, temporary UAT
+// choice. Say so on every boot so it cannot quietly become permanent.
+if (process.env.NODE_ENV === 'production' && !cookieSecure()) {
+  serverLog(
+    'WARNING: COOKIE_SECURE=false — the session cookie is not marked Secure, so it ' +
+    'travels in clear text. Acceptable only for IP-based UAT on a trusted network. ' +
+    'Remove COOKIE_SECURE once TLS is in front.'
+  );
+}
 
 // Resolve the session, then refuse anything that is not explicitly public.
 // Registered before every route below, including static uploads — lab reports
