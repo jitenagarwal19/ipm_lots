@@ -98,6 +98,80 @@ Found on the current machine, both real:
 Also: **Redis is not running.** The Gmail worker polls through it, so without it
 email ingest silently never happens while the app looks perfectly healthy.
 
+## Production is separate from development
+
+They share a machine, so they are separated by construction rather than by
+remembering:
+
+| | Development | Production |
+|---|---|---|
+| Folder | `~/Documents/In-house tooling/IPM Lots` | `~/ipm-production` |
+| Database | `ipm_lots` | `ipm_lots_prod` |
+| Ports | 3000 / 4000 | **3100 / 4100** |
+| Uploads | `backend/uploads` | `~/ipm-data/uploads` |
+
+The ports matter most: `npm run dev` grabs 3000/4000, so it can never shadow or
+collide with production. Seeded once from dev (5,937 limits, 159 lab PDFs);
+after that the two diverge, which is the point.
+
+## Starting when the Mac is switched on
+
+**LaunchDaemons, not LaunchAgents.** An Agent starts at login — with auto-login
+off, powering on the Mini would start nothing at all. Daemons start at boot,
+before any login. They run as `jitenagarwal` so they can reach Homebrew node,
+the checkout and `~/.cloudflared`.
+
+`deploy/launchdaemons.sh` generates five: api, worker, web, tunnel, watchdog.
+`ThrottleInterval` makes a service that fails at boot back off rather than spin —
+the usual cause being the network not being up yet.
+
+No pm2: one less dependency, and launchd already supervises.
+
+PostgreSQL and Redis must also be **system** services, or they will not be there
+when the daemons start:
+
+```bash
+sudo brew services start postgresql@16
+sudo brew services start redis
+```
+
+(`brew services` without sudo installs a LaunchAgent, which is the problem this
+section exists to avoid.)
+
+## Uptime alerting
+
+`deploy/watchdog.js`, every 60 seconds, checking PostgreSQL, Redis, the API, the
+web process, the tunnel process, and the public URL end to end.
+
+It emails **only on a change of state** — went down, came back. A monitor that
+mails every minute during an outage gets filtered within a day, and then it is
+not a monitor.
+
+It does **not** restart anything. You asked to be told so you can decide, and a
+watchdog that silently restarts a crash-looping service hides the fault it exists
+to report.
+
+### The half a local watchdog cannot cover
+
+It dies with the machine. A Mac that is switched off, or an internet connection
+that has dropped, produces no alert at all — and that is the outage you most want
+to hear about.
+
+So set `HEARTBEAT_URL` to an external dead-man's switch (healthchecks.io has a
+free tier). Every all-clear pings it. When the pings stop, *they* email you.
+
+| Failure | Caught by |
+|---|---|
+| A service crashed | local watchdog |
+| Tunnel dropped | local watchdog |
+| Database stopped | local watchdog |
+| **Mac powered off** | heartbeat only |
+| **Internet down** | heartbeat only |
+| **Power cut** | heartbeat only |
+
+Without the heartbeat you are monitoring only the failures that let the monitor
+survive, which are the less serious half.
+
 ## Deploys
 
 Manual for now:
