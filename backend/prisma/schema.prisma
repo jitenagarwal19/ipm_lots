@@ -301,8 +301,23 @@ model ComplianceLimit {
   source_file         String?
   /// Export date of the source sheet — provenance and staleness.
   snapshot_date       DateTime?
-  /// VERIFIED | IMPORTED_UNVERIFIED | PROXY_UNVERIFIED | UNVERIFIED
+  /// VERIFIED | IMPORTED_UNVERIFIED | PROXY_UNVERIFIED | COPIED_UNVERIFIED
+  /// | MANUAL_ENTRY | UNVERIFIED
   verification_status String    @default("UNVERIFIED")
+
+  /// Set when this row was cloned from another profile. Provenance only — a
+  /// snapshot, not a live link. Changing the source later does not propagate.
+  copied_from_limit_id String?
+  /// Human-readable source, e.g. "UK / Cumin Seed". Denormalised so the grid can
+  /// show where a row came from without a join, and so it survives the source
+  /// profile being deleted.
+  ///
+  /// Rows cloned across regimes keep the SOURCE regime's citations
+  /// (regulation_ref, enforcement_date, applies_to, source_commodity). That is a
+  /// deliberate choice to preserve the reference position, and it is exactly why
+  /// this field and COPIED_UNVERIFIED exist: without them a second-hand citation
+  /// reads as a researched fact for a regime nobody has checked.
+  inherited_from       String?
 
   @@unique([profile_id, molecule_id])
   @@unique([standard_id, molecule_id, product_id])

@@ -1104,4 +1104,8 @@ router.put('/system/:key', async (req, res) => {
   }
 });
 
+// Profile cloning lives in its own module — see routes/clone.ts.
+import cloneRoutes from './clone';
+router.use('/compliance/clone', cloneRoutes);
+
 export default router;

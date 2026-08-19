@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getApiBaseUrl } from "@/lib/utils";
+import { CloneProfileDialog } from "@/components/CloneProfileDialog";
 
 const API_BASE_URL = `${getApiBaseUrl()}/settings`;
 
@@ -441,6 +442,7 @@ function ComplianceSettings({ products }: { products: any[] }) {
   // A full national register is ~650 rows per product, so the grid needs a
   // filter and a cap or it becomes an unscrollable wall.
   const [limitFilter, setLimitFilter] = useState("");
+  const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [isMoleculeDialogOpen, setIsMoleculeDialogOpen] = useState(false);
   const [newMoleculeName, setNewMoleculeName] = useState("");
   const [newMoleculeCas, setNewMoleculeCas] = useState("");
@@ -800,8 +802,33 @@ function ComplianceSettings({ products }: { products: any[] }) {
 
           <Card className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
             <CardHeader>
-              <CardTitle className="text-white">Molecule Limits</CardTitle>
-              <CardDescription className="text-zinc-400">Edit individual molecule limits for this product and regulation.</CardDescription>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-white">Molecule Limits</CardTitle>
+                  <CardDescription className="text-zinc-400">Edit individual molecule limits for this product and regulation.</CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setIsCloneOpen(true)}
+                  className="shrink-0 border border-zinc-700 text-emerald-400 hover:bg-zinc-800 hover:text-emerald-300"
+                >
+                  Clone from another profile
+                </Button>
+              </div>
+              {isCloneOpen && (
+                <CloneProfileDialog
+                  targetProfileId={profile.id}
+                  targetLabel={`${profile.standard?.code ?? ""} / ${profile.product?.name ?? ""}`}
+                  onClose={() => setIsCloneOpen(false)}
+                  onSaved={(summary) => {
+                    setIsCloneOpen(false);
+                    setMessage(summary);
+                    // Re-read the profile so the grid shows the newly cloned rows.
+                    void loadProfile();
+                  }}
+                />
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <form onSubmit={saveLimit} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
