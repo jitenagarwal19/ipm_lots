@@ -1,5 +1,5 @@
 /**
- * PM2 process definitions for the VPS.
+ * PM2 process definitions.
  *
  * Three processes, because the app genuinely is three things. The worker is the
  * one people forget: `index.ts` does not start it, so an app deployed without it
@@ -8,6 +8,11 @@
  *   pm2 start ecosystem.config.js
  *   pm2 save && pm2 startup      # survive a reboot
  */
+
+// Logs go next to the checkout by default, which works on macOS without sudo.
+// Override with IPM_LOG_DIR on a Linux host that prefers /var/log.
+const path = require('node:path');
+const LOG_DIR = process.env.IPM_LOG_DIR || path.join(__dirname, 'logs');
 
 module.exports = {
   apps: [
@@ -21,8 +26,8 @@ module.exports = {
       // would multiply the effective limit. Move it to Redis before scaling up.
       exec_mode: 'fork',
       max_memory_restart: '600M',
-      error_file: '/var/log/ipm/api.err.log',
-      out_file: '/var/log/ipm/api.out.log',
+      error_file: path.join(LOG_DIR, 'api.err.log'),
+      out_file: path.join(LOG_DIR, 'api.out.log'),
       time: true,
     },
     {
@@ -35,8 +40,8 @@ module.exports = {
       max_memory_restart: '600M',
       // Gmail polling every 30s; a crash loop here should back off, not spin.
       restart_delay: 5000,
-      error_file: '/var/log/ipm/worker.err.log',
-      out_file: '/var/log/ipm/worker.out.log',
+      error_file: path.join(LOG_DIR, 'worker.err.log'),
+      out_file: path.join(LOG_DIR, 'worker.out.log'),
       time: true,
     },
     {
@@ -48,8 +53,8 @@ module.exports = {
       instances: 1,
       exec_mode: 'fork',
       max_memory_restart: '800M',
-      error_file: '/var/log/ipm/web.err.log',
-      out_file: '/var/log/ipm/web.out.log',
+      error_file: path.join(LOG_DIR, 'web.err.log'),
+      out_file: path.join(LOG_DIR, 'web.out.log'),
       time: true,
     },
   ],

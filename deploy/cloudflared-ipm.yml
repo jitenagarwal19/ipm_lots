@@ -1,0 +1,45 @@
+# Cloudflare named tunnel for the IPM dashboard on the Mac Mini.
+#
+#   cp deploy/cloudflared-ipm.yml ~/.cloudflared/config.yml
+#
+# A NAMED tunnel, deliberately, not the `--url` quick tunnel the Phyto agent
+# uses. Quick tunnels get a fresh random hostname on every restart, which is why
+# run_tunnel.py has to email the new address each time. This one keeps its
+# hostname across restarts and reboots.
+#
+# The tunnel dials OUT to Cloudflare. Nothing listens for inbound connections,
+# so there is no port to scan, no firewall rule to get wrong, and no public IP
+# tied to this office.
+
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /Users/jitenagarwal/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
+
+# Keep the connection healthy on a residential/office line.
+originRequest:
+  connectTimeout: 30s
+  # Report extraction calls OpenAI and can genuinely take minutes.
+  # Shorter than this and long reviews fail with a confusing 502.
+  noTLSVerify: false
+
+ingress:
+  # ── API and file downloads go straight to Express.
+  # Path-split at the edge rather than proxying through Next means large lab
+  # PDFs and slow OpenAI calls take one hop, not two. Crucially it is the SAME
+  # hostname as the UI, so the browser sees one origin and CORS never engages.
+  - hostname: REPLACE_WITH_HOSTNAME
+    path: ^/(api|uploads|health)(/.*)?$
+    service: http://127.0.0.1:4000
+    originRequest:
+      connectTimeout: 30s
+      # OpenAI extraction on a big report.
+      httpHostHeader: REPLACE_WITH_HOSTNAME
+
+  # ── Everything else is the Next.js app.
+  - hostname: REPLACE_WITH_HOSTNAME
+    service: http://127.0.0.1:3000
+    originRequest:
+      httpHostHeader: REPLACE_WITH_HOSTNAME
+
+  # Required catch-all. Anything not matched above is refused rather than
+  # silently forwarded somewhere.
+  - service: http_status:404

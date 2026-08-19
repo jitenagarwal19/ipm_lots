@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps the named Cloudflare tunnel up.
+
+  Install:
+    cp deploy/com.sumanexport.ipm-tunnel.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.sumanexport.ipm-tunnel.plist
+
+  This is a LaunchAgent, so it starts when jitenagarwal logs in. On a Mac Mini
+  acting as a server that means auto-login must stay enabled, or nothing comes
+  back after a reboot. See deploy/setup-mac-server.sh, which checks for this.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sumanexport.ipm-tunnel</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/cloudflared</string>
+    <string>tunnel</string>
+    <string>--config</string>
+    <string>/Users/jitenagarwal/.cloudflared/config.yml</string>
+    <string>run</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Do not hammer Cloudflare if the network is down after a reboot. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jitenagarwal/Documents/In-house tooling/IPM Lots/logs/tunnel.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jitenagarwal/Documents/In-house tooling/IPM Lots/logs/tunnel.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>

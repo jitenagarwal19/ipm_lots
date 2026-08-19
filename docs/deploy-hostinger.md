@@ -1,7 +1,13 @@
-# Deploying to Hostinger — plan
+# Deployment — plan
 
-Status: the app side is done and pushed. The server side is written but has not
-yet run against a real VPS.
+> **Superseded for production by [deploy-mac-mini.md](deploy-mac-mini.md).** The
+> Mac Mini already runs 24/7, already holds the database, and `sumanexport.in` is
+> already on Cloudflare — so a tunnel from the Mini is cheaper, keeps compliance
+> data on hardware we own, and opens *zero* inbound ports. This document is kept
+> for the Hostinger analysis in §2 (PostgreSQL is VPS-only) and because the app
+> hardening in §4 applies to any host.
+
+Status: the app side is done and pushed. The VPS side is written but unused.
 
 ---
 
