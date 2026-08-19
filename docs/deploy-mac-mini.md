@@ -5,7 +5,7 @@ on Cloudflare. That makes it a better production host than a VPS for this app �
 not a compromise.
 
 ```
-                  https://f2vxka-xhb8.sumanexport.in
+                  https://f2vxka-xhb8.indianspiceexporter.com
   Internet ─────────────────▶ Cloudflare edge
                                │  · real TLS, renewed automatically
                                │  · Access policy checks the email FIRST
@@ -52,9 +52,16 @@ reliable here.
 Four, and they are independent:
 
 1. **Obscure hostname.** `f2vxka-xhb8` is ~2^50 — not findable by guessing.
-   Cloudflare's `*.sumanexport.in` wildcard certificate covers it, so unlike a
-   normal subdomain it does **not** appear in Certificate Transparency logs.
-   This is obscurity, not security; it just removes drive-by traffic.
+   Cloudflare's `*.indianspiceexporter.com` wildcard certificate covers it, so
+   unlike a normal subdomain it does **not** appear in Certificate Transparency
+   logs. This is obscurity, not security; it just removes drive-by traffic.
+
+   Note the zone: `cloudflared tunnel login` scoped `cert.pem` to
+   **indianspiceexporter.com**, not sumanexport.in. Asking it to route
+   `x.sumanexport.in` therefore produced `x.sumanexport.in.indianspiceexporter.com`
+   — three labels deep, which the one-label wildcard does not cover. To move the
+   dashboard to sumanexport.in, re-run `cloudflared tunnel login` and pick that
+   zone first.
 2. **Cloudflare Access.** An allowlisted email must authenticate at the edge
    before a single byte reaches the Mini.
 3. **The app's own email one-time-code login**, with default-deny on every route.
@@ -186,6 +193,29 @@ Auto-deploy on merge would need a **GitHub self-hosted runner** on the Mini —
 the runner connects outbound to GitHub, so it works without inbound ports. The
 existing `.github/workflows/deploy.yml` SSHes to a host and will not work here;
 switching it to `runs-on: self-hosted` is the change when you want it.
+
+## Live
+
+```
+https://f2vxka-xhb8.indianspiceexporter.com
+```
+
+Verified end to end: valid TLS (Google Trust Services via Cloudflare), HTTP/2,
+`/health` path-split to Express, `/login` to Next, `/api` refusing
+unauthenticated requests with 401, `/limits` redirecting to the login. Four edge
+connections from Mumbai, Ahmedabad and Delhi.
+
+**Cloudflare Access is not configured yet.** Until it is, the only things between
+the internet and this dashboard are the unguessable hostname and the app's own
+one-time-code login. Both are real, but Access is the layer that stops requests
+before they reach the Mini. Add it now:
+
+  Zero Trust → Access → Applications → Add → Self-hosted
+  Domain: f2vxka-xhb8.indianspiceexporter.com
+  Policy: Allow → Emails → the three allowlisted addresses
+
+Also delete the stray DNS record left by the first attempt:
+`f2vxka-xhb8.sumanexport.in.indianspiceexporter.com`.
 
 ## What this setup does not solve
 

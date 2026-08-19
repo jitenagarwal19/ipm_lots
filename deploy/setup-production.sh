@@ -91,7 +91,7 @@ REDIS_PORT=6379
 
 # ── monitoring ───────────────────────────────────────────────────────
 WATCHDOG_ALERT_EMAIL=spices@sumanexport.in
-PUBLIC_URL=https://f2vxka-xhb8.sumanexport.in
+PUBLIC_URL=https://f2vxka-xhb8.indianspiceexporter.com
 # External dead-man's switch. The watchdog cannot email you about a Mac that is
 # switched off — this can. Create a check at healthchecks.io and paste its ping
 # URL here.

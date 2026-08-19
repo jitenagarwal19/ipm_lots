@@ -127,14 +127,14 @@ Manual steps — these publish to the internet, so they are yours to run
 1. Create the tunnel and point the hostname at it:
 
      cloudflared tunnel create ipm-dashboard
-     cloudflared tunnel route dns ipm-dashboard f2vxka-xhb8.sumanexport.in
+     cloudflared tunnel route dns ipm-dashboard f2vxka-xhb8.indianspiceexporter.com
 
    Note the tunnel ID it prints.
 
 2. Install the tunnel config, substituting that ID and the hostname:
 
      sed -e "s/REPLACE_WITH_TUNNEL_ID/<id>/g" \
-         -e "s/REPLACE_WITH_HOSTNAME/f2vxka-xhb8.sumanexport.in/g" \
+         -e "s/REPLACE_WITH_HOSTNAME/f2vxka-xhb8.indianspiceexporter.com/g" \
          deploy/cloudflared-ipm.yml > ~/.cloudflared/config.yml
 
 3. Run the tunnel under launchd:
@@ -144,7 +144,7 @@ Manual steps — these publish to the internet, so they are yours to run
 
 4. Cloudflare Zero Trust → Access → Applications → Add:
      Type: Self-hosted
-     Domain: f2vxka-xhb8.sumanexport.in
+     Domain: f2vxka-xhb8.indianspiceexporter.com
      Policy: Allow → Emails → your allowlist
    Nothing reaches this Mac until Cloudflare has checked that email.
 
