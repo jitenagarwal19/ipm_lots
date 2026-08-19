@@ -44,7 +44,7 @@ export const SESSION_COOKIE = 'ipm_session';
 export function allowedEmails(): Set<string> {
   const raw =
     process.env.AUTH_ALLOWED_EMAILS ||
-    'spices@sumanexport.in,connect@sumanexport.in,export@sumanexport.in';
+    'spices@sumanexport.in,connect@sumanexport.in,export@sumanexport.in,operations@sumanexport.in';
   return new Set(
     raw
       .split(',')

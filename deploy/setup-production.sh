@@ -83,7 +83,7 @@ BACKUP_DIR=$DATA_DIR/backups
 # Cloudflare terminates real TLS, so the session cookie stays Secure.
 # Do NOT set COOKIE_SECURE=false here.
 
-AUTH_ALLOWED_EMAILS=spices@sumanexport.in,connect@sumanexport.in,export@sumanexport.in
+AUTH_ALLOWED_EMAILS=spices@sumanexport.in,connect@sumanexport.in,export@sumanexport.in,operations@sumanexport.in
 AUTH_NOTIFY_EMAIL=spices@sumanexport.in
 
 REDIS_HOST=127.0.0.1
