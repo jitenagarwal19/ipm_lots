@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { getApiBaseUrl, getBackendBaseUrl } from "@/lib/utils";
 
 type Attachment = {
   id: string;
@@ -70,9 +71,6 @@ type LotDetail = {
   tests?: LotTest[];
 };
 
-function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:4000/api`;
-}
 
 function getStatusStyle(status: string) {
   switch (status) {
@@ -91,10 +89,6 @@ function getStatusStyle(status: string) {
   }
 }
 
-function getUploadBaseUrl() {
-  if (typeof window === "undefined") return process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-  return process.env.NEXT_PUBLIC_BACKEND_URL || `http://${window.location.hostname}:4000`;
-}
 
 function isDetectedMolecule(molecule: MoleculeResult) {
   if (molecule.is_detected === true) return true;
@@ -288,7 +282,7 @@ export default function LotViewClient() {
                       {email.attachments?.map((attachment) => (
                         <a
                           key={attachment.id}
-                          href={`${getUploadBaseUrl()}${attachment.file_url}`}
+                          href={`${getBackendBaseUrl()}${attachment.file_url}`}
                           target="_blank"
                           rel="noreferrer"
                           className="block truncate text-xs text-amber-400 hover:underline"

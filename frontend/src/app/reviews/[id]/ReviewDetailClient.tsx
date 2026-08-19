@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CountryCompliance } from "./CountryCompliance";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getApiBaseUrl, getBackendBaseUrl } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -116,14 +118,7 @@ type CompliancePreview = {
   standard: ComplianceStandard;
 };
 
-function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || `http://${window.location.hostname}:4000/api`;
-}
 
-function getUploadBaseUrl() {
-  if (typeof window === "undefined") return process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-  return process.env.NEXT_PUBLIC_BACKEND_URL || `http://${window.location.hostname}:4000`;
-}
 
 function formatValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "-";
@@ -675,7 +670,7 @@ export default function ReviewDetailClient() {
               onClick={() => setShowCompliance((v) => !v)}
               className="bg-amber-600 hover:bg-amber-700 text-white"
             >
-              Check country-wise compliant
+              {showCompliance ? "Hide" : "Record"} compliance sign-off
             </Button>
           )}
         </div>
@@ -718,11 +713,15 @@ export default function ReviewDetailClient() {
             </CardContent>
           </Card>
 
+          <CountryCompliance reportId={String(params.id)} apiBaseUrl={getApiBaseUrl()} />
+
           <Card size="sm" className="bg-zinc-900/50 border-zinc-800 backdrop-blur-xl">
             <CardHeader className="pb-2">
               <CardTitle className="text-white text-sm">Molecules Fetched</CardTitle>
               <CardDescription className="text-zinc-400 text-xs">
-                Every molecule/analyte row extracted by AI. Use Edit to fix wrong detection, limits, or text before approval.
+                Rows as the AI read them off the report. The limit and compliance columns are{" "}
+                <span className="text-amber-400/90">what the lab claimed</span> — our own verdict per country is
+                above. Use Edit to correct anything the AI misread.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
@@ -732,9 +731,9 @@ export default function ReviewDetailClient() {
                     <TableRow className="border-zinc-800 hover:bg-transparent">
                       <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Molecule</TableHead>
                       <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Result</TableHead>
-                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Limit</TableHead>
+                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Lab-stated limit</TableHead>
                       <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Detected</TableHead>
-                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Compliant</TableHead>
+                      <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium">Lab says</TableHead>
                       <TableHead className="h-8 py-1.5 px-2 text-zinc-400 font-medium w-[4.5rem] text-right">
                         Edit
                       </TableHead>
@@ -940,7 +939,7 @@ export default function ReviewDetailClient() {
                       <p className="text-xs text-zinc-500">{sourceAttachment.file_type || "unknown file"}</p>
                     </div>
                     <a
-                      href={`${getUploadBaseUrl()}${sourceAttachment.file_url}`}
+                      href={`${getBackendBaseUrl()}${sourceAttachment.file_url}`}
                       target="_blank"
                       rel="noreferrer"
                       className="shrink-0 text-sm text-amber-400 hover:underline"
