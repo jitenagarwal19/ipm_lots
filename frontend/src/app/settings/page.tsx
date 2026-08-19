@@ -876,7 +876,7 @@ function ComplianceSettings({ products }: { products: any[] }) {
 
                 return (
                   <>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <Input
                         value={limitFilter}
                         onChange={(e) => setLimitFilter(e.target.value)}
@@ -894,12 +894,17 @@ function ComplianceSettings({ products }: { products: any[] }) {
                     <Table>
                       <TableHeader>
                         <TableRow className="border-zinc-800">
-                          <TableHead className="text-zinc-400">Molecule</TableHead>
-                          <TableHead className="text-zinc-400">Limit</TableHead>
-                          <TableHead className="text-zinc-400">In force</TableHead>
-                          <TableHead className="text-zinc-400">Regulation</TableHead>
-                          <TableHead className="text-zinc-400">NABL</TableHead>
-                          <TableHead />
+                          {/* Widths are capped so ~650 register rows stay readable in one
+                              window. Register molecule names run to 40+ characters
+                              ("zucchini yellow mosaic virus weak strain"), which without a
+                              cap pushed the table to 2149px inside a 577px container.
+                              Full text is preserved in the title attribute on each cell. */}
+                          <TableHead className="w-[38%] min-w-0 text-zinc-400">Molecule</TableHead>
+                          <TableHead className="whitespace-nowrap text-zinc-400">Limit</TableHead>
+                          <TableHead className="hidden whitespace-nowrap text-zinc-400 lg:table-cell">In force</TableHead>
+                          <TableHead className="hidden w-[24%] min-w-0 text-zinc-400 md:table-cell">Regulation</TableHead>
+                          <TableHead className="hidden whitespace-nowrap text-zinc-400 sm:table-cell">NABL</TableHead>
+                          <TableHead className="w-px" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -907,16 +912,20 @@ function ComplianceSettings({ products }: { products: any[] }) {
                         {all.length > 0 && matches.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-zinc-500">No limit matches “{limitFilter}”.</TableCell></TableRow>}
                         {shown.map((limit: any) => (
                           <TableRow key={limit.id} className="border-zinc-800">
-                            <TableCell className="text-zinc-200" title={limit.residue_definition || undefined}>
-                              {limit.molecule?.name || "-"}
-                              {limit.verification_status === "PROXY_UNVERIFIED" && (
-                                <span className="ml-1.5 text-amber-500" title={limit.notes || "Proxy commodity mapping — verify before relying on it"}>⚠</span>
-                              )}
+                            <TableCell className="max-w-0 text-zinc-200" title={limit.residue_definition || limit.molecule?.name || undefined}>
+                              <span className="flex items-center gap-1.5">
+                                <span className="truncate">{limit.molecule?.name || "-"}</span>
+                                {limit.verification_status === "PROXY_UNVERIFIED" && (
+                                  <span className="shrink-0 text-amber-500" title={limit.notes || "Proxy commodity mapping — verify before relying on it"}>⚠</span>
+                                )}
+                              </span>
                             </TableCell>
-                            <TableCell className="text-zinc-400">{formatLimit(limit)}</TableCell>
-                            <TableCell className="text-zinc-500">{limit.enforcement_date ? new Date(limit.enforcement_date).toLocaleDateString("en-GB") : "-"}</TableCell>
-                            <TableCell className="text-zinc-500">{limit.regulation_ref || "-"}</TableCell>
-                            <TableCell className="text-zinc-500">{limit.nabl === true ? "Yes" : limit.nabl === false ? "No" : "-"}</TableCell>
+                            <TableCell className="whitespace-nowrap text-zinc-400">{formatLimit(limit)}</TableCell>
+                            <TableCell className="hidden whitespace-nowrap text-zinc-500 lg:table-cell">{limit.enforcement_date ? new Date(limit.enforcement_date).toLocaleDateString("en-GB") : "-"}</TableCell>
+                            <TableCell className="hidden max-w-0 text-zinc-500 md:table-cell" title={limit.regulation_ref || undefined}>
+                              <span className="block truncate">{limit.regulation_ref || "-"}</span>
+                            </TableCell>
+                            <TableCell className="hidden whitespace-nowrap text-zinc-500 sm:table-cell">{limit.nabl === true ? "Yes" : limit.nabl === false ? "No" : "-"}</TableCell>
                             <TableCell className="text-right">
                               <Button variant="ghost" size="sm" onClick={() => { setLimitEditId(limit.id); setLimitMoleculeId(limit.molecule_id); setLimitValue(String(limit.limit_value)); setLimitNotes(limit.notes || ""); }} className="text-blue-400">Edit</Button>
                             </TableCell>
