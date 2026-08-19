@@ -2,7 +2,14 @@
 
 // Where the Express API actually listens. Server-side only — the browser never
 // sees this, it talks to /api on its own origin.
-const BACKEND_ORIGIN = process.env.BACKEND_URL || "http://127.0.0.1:4000";
+//
+// IMPORTANT: rewrite destinations are resolved at BUILD time and baked into
+// .next/routes-manifest.json. Setting BACKEND_URL when starting the server has
+// no effect — it must be set for `next build`. Get this wrong and production
+// proxies to the development backend, with no error on either side: requests
+// simply never arrive. scripts/verify-rewrites.mjs asserts it after every build.
+const BACKEND_PORT = process.env.BACKEND_PORT || "4000";
+const BACKEND_ORIGIN = process.env.BACKEND_URL || `http://127.0.0.1:${BACKEND_PORT}`;
 
 const nextConfig = {
   // Avoid `output: "export"`: dynamic routes like `/lots/[id]` load real UUIDs at runtime from the API.

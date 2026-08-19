@@ -48,14 +48,24 @@ npm run build
 echo "==> Frontend: install and build"
 cd "$APP_DIR/frontend"
 npm ci
-npm run build
+# Next resolves rewrite destinations at build time, so the backend origin has to
+# be present for the build itself. Setting it only at run time silently proxies
+# production to whatever port was baked in.
+BACKEND_PORT="$(grep -E '^PORT=' ../backend/.env | cut -d= -f2 | tr -d '"' || echo 4100)"
+BACKEND_URL="http://127.0.0.1:${BACKEND_PORT}" npm run build
+node scripts/verify-rewrites.mjs "http://127.0.0.1:${BACKEND_PORT}"
 
-echo "==> Reloading processes"
+echo "==> Restarting services"
 cd "$APP_DIR"
-# --update-env picks up .env changes without a full restart.
-pm2 reload ecosystem.config.js --update-env
-
-pm2 save
+# launchd, not pm2: these run as LaunchDaemons so they come back when the Mac is
+# powered on, without anyone logging in. kickstart -k restarts a running job.
+for svc in ipm-api ipm-worker ipm-web; do
+  if sudo launchctl kickstart -k "system/com.sumanexport.$svc" 2>/dev/null; then
+    echo "    restarted $svc"
+  else
+    echo "    $svc not loaded as a daemon — start it with launchctl load, or run it by hand"
+  fi
+done
 
 echo
 echo "==> Deployed ${TARGET_SHA}"

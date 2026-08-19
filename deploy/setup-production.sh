@@ -113,7 +113,13 @@ done
 step "Install and build"
 ( cd "$PROD_DIR/backend"  && npm ci --silent && npx prisma generate && npx prisma migrate deploy && npm run build )
 ok "backend"
-( cd "$PROD_DIR/frontend" && npm ci --silent && npm run build )
+# BACKEND_URL must be set for the BUILD, not the run: Next bakes rewrite
+# destinations into routes-manifest.json. Without it production would proxy to
+# the dev backend on 4000 and requests would silently vanish.
+( cd "$PROD_DIR/frontend" \
+    && npm ci --silent \
+    && BACKEND_URL="http://127.0.0.1:4100" npm run build \
+    && node scripts/verify-rewrites.mjs "http://127.0.0.1:4100" )
 ok "frontend"
 
 step "Done"
