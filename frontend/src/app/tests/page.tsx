@@ -167,12 +167,12 @@ export default function TestsPage() {
               <TableRow className="border-zinc-800 hover:bg-transparent">
                 <TableHead className="text-zinc-400 whitespace-nowrap">Date</TableHead>
                 <TableHead className="hidden w-[20%] text-zinc-400 lg:table-cell">Test lot information</TableHead>
-                <TableHead className="w-[26%] text-zinc-400">Result</TableHead>
+                <TableHead className="w-[40%] text-zinc-400">Result</TableHead>
                 <TableHead className="whitespace-nowrap text-zinc-400">Lot number</TableHead>
                 <TableHead className="hidden w-[18%] text-zinc-400 xl:table-cell">Test type</TableHead>
                 <TableHead className="hidden w-[18%] text-zinc-400 xl:table-cell">Lab</TableHead>
                 <TableHead className="whitespace-nowrap text-zinc-400">Status</TableHead>
-                <TableHead className="hidden whitespace-nowrap text-zinc-400 md:table-cell">Compliance</TableHead>
+                <TableHead className="hidden whitespace-nowrap text-zinc-400 xl:table-cell">Compliance</TableHead>
                 <TableHead className="text-zinc-400">Review</TableHead>
               </TableRow>
             </TableHeader>
@@ -229,12 +229,12 @@ export default function TestsPage() {
                       </Link>
                     </TableCell>
                     <TableCell className="hidden max-w-0 truncate align-top text-zinc-400 xl:table-cell" title={test.lab?.name ?? undefined}>{test.lab?.name || "Unknown"}</TableCell>
-                    <TableCell className="align-top">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(test.status)}`}>
+                    <TableCell className="whitespace-nowrap align-top">
+                      <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${getStatusStyle(test.status)}`}>
                         {test.status}
                       </span>
                     </TableCell>
-                    <TableCell className="text-zinc-300 align-top">
+                    <TableCell className="hidden align-top text-zinc-300 xl:table-cell">
                       {compliance.length > 0 ? (
                         <div className="flex max-w-[14rem] flex-wrap gap-1">
                           {compliance.map((check) => (
@@ -249,7 +249,7 @@ export default function TestsPage() {
                         <span className="text-zinc-600">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-zinc-300 align-top">
+                    <TableCell className="whitespace-nowrap align-top text-right text-zinc-300">
                       {pending ? (
                         <Link href={`/reviews/${pending.id}`} className="text-amber-400 hover:underline text-sm">
                           {pending.status === "COMPLIANCE_PENDING" ? "Check compliance" : "Review report"}
