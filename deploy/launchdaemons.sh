@@ -17,6 +17,7 @@ PROD_DIR="${PROD_DIR:-/Users/jitenagarwal/ipm-production}"
 NODE="${NODE:-/opt/homebrew/bin/node}"
 CLOUDFLARED="${CLOUDFLARED:-/opt/homebrew/bin/cloudflared}"
 LOG_DIR="$PROD_DIR/logs"
+mkdir -p /Users/jitenagarwal/ipm-ops/logs 2>/dev/null || true
 OUT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/generated"
 
 mkdir -p "$OUT"
@@ -88,6 +89,19 @@ emit "ipm-tunnel" \
     <string>/Users/${PROD_USER}/.cloudflared/config.yml</string>
     <string>run</string>" \
 "${PROD_DIR}"
+
+# Uptime Kuma — the cross-app status dashboard. Lives outside the IPM checkout
+# because it watches every app on this Mac, not just this one.
+KUMA_DIR="${KUMA_DIR:-/Users/jitenagarwal/ipm-ops/uptime-kuma}"
+if [[ -d "$KUMA_DIR" ]]; then
+  emit "ipm-ops-kuma" \
+"    <string>${NODE}</string>
+    <string>${KUMA_DIR}/server/server.js</string>" \
+"${KUMA_DIR}" \
+"    <key>UPTIME_KUMA_HOST</key><string>127.0.0.1</string>
+    <key>UPTIME_KUMA_PORT</key><string>3001</string>
+    <key>DATA_DIR</key><string>/Users/jitenagarwal/ipm-ops/data/</string>"
+fi
 
 # The watchdog is a daemon too, on a timer rather than KeepAlive.
 cat > "$OUT/com.sumanexport.ipm-watchdog.plist" <<PLIST

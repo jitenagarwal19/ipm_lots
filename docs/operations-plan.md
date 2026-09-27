@@ -1,6 +1,17 @@
 # How this runs: deployment, alerts, and working from another machine
 
-Status: plan. Parts 2 and 3 are built; the rest is specified but not yet made.
+Status: the monitoring dashboard and the shared tunnel are built. Deployment
+automation is specified but not yet made.
+
+**Live now**
+| | |
+|---|---|
+| IPM dashboard | `https://f2vxka-xhb8.indianspiceexporter.com` |
+| Status dashboard (Uptime Kuma) | `https://ops-smd7vyqx5u.indianspiceexporter.com` |
+
+Both served by **one** cloudflared process from one config, which is the pattern
+every further app should follow — a tunnel per app is what produced five of them,
+most unused.
 
 ---
 
@@ -146,10 +157,24 @@ The watchdog emails **only on a change of state** — went down, came back,
 rebooted. A monitor that mails every minute during an outage gets filtered within
 a day, and then it is not a monitor.
 
-### Uptime Kuma also gives you the dashboard
+### Uptime Kuma — installed
+
+`~/ipm-ops/uptime-kuma`, port 3001, its own hostname on the shared tunnel, and a
+LaunchDaemon so it starts at boot with everything else.
 
 One page showing every app — IPM, phyto, stock management — up or down, response
-time, history. Running on the VPS you already pay for and currently do not use.
+time and history. Add a monitor per app; HTTP checks against each public URL are
+enough to start.
+
+**It is on the Mini, which is the compromise to understand.** It can watch every
+app and tell you which one died. It cannot tell you the Mini itself is off or
+stuck at the FileVault unlock screen, because it is not running either. Two ways
+to close that gap, and one of them is needed:
+
+- Put a second Uptime Kuma on the Hostinger VPS watching the public URLs, or
+- Set `HEARTBEAT_URL` in `~/ipm-production/backend/.env` to a healthchecks.io
+  check. The watchdog already pings it on every all-clear; when the pings stop,
+  they email you.
 
 ---
 
