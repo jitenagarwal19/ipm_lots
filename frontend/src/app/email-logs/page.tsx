@@ -92,7 +92,7 @@ export default function EmailLogsPage() {
                       <TableCell className="text-zinc-300 font-medium whitespace-nowrap">
                         {format(new Date(email.received_at), "MMM d, yyyy HH:mm")}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <Badge variant="outline" className={email.direction === "SENT" ? "text-blue-400 border-blue-400/30 bg-blue-400/10" : "text-emerald-400 border-emerald-400/30 bg-emerald-400/10"}>
                           {email.direction}
                         </Badge>

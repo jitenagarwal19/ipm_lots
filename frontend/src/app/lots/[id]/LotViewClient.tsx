@@ -201,8 +201,8 @@ export default function LotViewClient() {
                     lot.tests?.map((test) => (
                       <TableRow key={test.id} className="border-zinc-800 hover:bg-zinc-800/50">
                         <TableCell className="font-medium text-zinc-200">{test.test_type?.name || "Unknown"}</TableCell>
-                        <TableCell className="text-zinc-400">{test.lab?.name || "Unknown"}</TableCell>
-                        <TableCell className="text-zinc-400">{test.test_type?.country_standard || "-"}</TableCell>
+                        <TableCell className="hidden max-w-0 truncate text-zinc-400 md:table-cell" title={test.lab?.name ?? undefined}>{test.lab?.name || "Unknown"}</TableCell>
+                        <TableCell className="hidden whitespace-nowrap text-zinc-400 sm:table-cell">{test.test_type?.country_standard || "-"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={getStatusStyle(test.status)}>
                             {test.status}

@@ -175,10 +175,10 @@ export default function Dashboard() {
                       <TableCell className="text-zinc-200">
                         {report.test?.test_type?.name || "Unknown"}
                       </TableCell>
-                      <TableCell className="text-zinc-400">
+                      <TableCell className="hidden max-w-0 truncate text-zinc-400 lg:table-cell">
                         {report.test?.lab?.name || "Unknown"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden xl:table-cell">
                         <div className="flex flex-col gap-1">
                           <Badge variant="outline" className="w-fit border-amber-500/30 text-amber-400">
                             {report.source_type}
@@ -198,7 +198,7 @@ export default function Dashboard() {
                         </div>
                       </TableCell>
                       <TableCell className="hidden whitespace-nowrap text-zinc-300 sm:table-cell">{report.moleculeResults?.length || 0}</TableCell>
-                      <TableCell className="text-zinc-400">
+                      <TableCell className="hidden whitespace-nowrap text-zinc-400 md:table-cell">
                         {formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}
                       </TableCell>
                       <TableCell className="text-right">

@@ -272,10 +272,10 @@ export default function TrackedEmailsPage() {
                       <TableCell className="text-zinc-300 font-medium whitespace-nowrap text-sm">
                         {email.date ? format(new Date(email.date), "MMM d, HH:mm") : '-'}
                       </TableCell>
-                      <TableCell className="text-zinc-300 text-sm truncate max-w-[200px]" title={email.from}>{email.from}</TableCell>
-                      <TableCell className="text-zinc-100 font-medium">{email.subject}</TableCell>
-                      <TableCell className="text-zinc-400 text-sm truncate max-w-[300px]" title={email.snippet}>{email.snippet}</TableCell>
-                      <TableCell className="text-zinc-300 text-xs">
+                      <TableCell className="hidden max-w-0 truncate text-sm text-zinc-300 lg:table-cell" title={email.from}>{email.from}</TableCell>
+                      <TableCell className="max-w-0 truncate font-medium text-zinc-100" title={email.subject}>{email.subject}</TableCell>
+                      <TableCell className="hidden max-w-0 truncate text-sm text-zinc-400 xl:table-cell" title={email.snippet}>{email.snippet}</TableCell>
+                      <TableCell className="hidden text-xs text-zinc-300 md:table-cell">
                         {email.attachments && email.attachments.length > 0 ? (
                           <div className="flex flex-col gap-1">
                             {email.attachments.map((att, i) => (
