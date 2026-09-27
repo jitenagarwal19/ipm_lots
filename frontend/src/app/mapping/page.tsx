@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { CreateLotForReport } from "@/components/CreateLotForReport";
 import { Badge } from "@/components/ui/badge";
 import { getApiBaseUrl } from "@/lib/utils";
 
@@ -66,6 +67,8 @@ export default function MappingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // The report whose "create lot" dialog is open, if any.
+  const [creatingFor, setCreatingFor] = useState<UnmappedReport | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -165,6 +168,21 @@ export default function MappingPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+      {creatingFor && (
+        <CreateLotForReport
+          reportId={creatingFor.id}
+          lotNumber={creatingFor.lot_number}
+          productName={creatingFor.lotMatch?.product?.name || creatingFor.metadata?.sampleName}
+          companyName={creatingFor.lotMatch?.company?.name || creatingFor.metadata?.clientName}
+          labName={creatingFor.metadata?.labName}
+          onClose={() => setCreatingFor(null)}
+          onCreated={(message) => {
+            setCreatingFor(null);
+            setFeedback(message);
+            void loadAll();
+          }}
+        />
+      )}
       <div>
         <h2 className="text-3xl font-bold tracking-tight text-white">Email Mapping</h2>
         <p className="text-zinc-400 mt-2">
@@ -288,9 +306,22 @@ export default function MappingPage() {
                       ) : null}
                     </Label>
                     {candidates.length === 0 ? (
-                      <p className="text-sm text-amber-300">
-                        No open Tests available. Create a Test first, then revisit this page.
-                      </p>
+                      <div className="space-y-2">
+                          <p className="text-sm text-amber-300">
+                            No open test for this report yet.
+                          </p>
+                          {/* The report already names its lot, product and lab —
+                              create the lot and test here instead of retyping them
+                              on another screen. */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setCreatingFor(report)}
+                            className="w-full border-emerald-600/40 text-emerald-400 hover:bg-emerald-600/10 hover:text-emerald-300"
+                          >
+                            + Create lot {report.lot_number ? `“${report.lot_number}”` : ""} and map it
+                          </Button>
+                        </div>
                     ) : (
                       <Select
                         value={selectedTestId}

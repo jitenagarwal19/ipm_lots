@@ -510,6 +510,43 @@ export async function pollForReplies(threadId: string) {
   }
 }
 
+/**
+ * Every tracked-label message not yet processed — past the TRACKED_EMAIL_LIMIT
+ * cap the inbox view uses. Ids only; the full message is fetched when it is
+ * processed, so listing a hundred is cheap.
+ *
+ * Checks the database as well as the Gmail label: the label can lag the save
+ * (a crash between storing a report and labelling the email), and an email
+ * processed twice produces duplicate lab reports.
+ */
+export async function listUnprocessedTrackedIds(labels: string[], cap = 100): Promise<string[]> {
+  const gmail = getGmailClient();
+  if (!gmail) throw new Error("Gmail client not configured.");
+  if (labels.length === 0) return [];
+
+  const q = `(${labels.map(formatGmailLabelQuery).join(' OR ')}) -${formatGmailLabelQuery(PROCESSED_GMAIL_LABEL)}`;
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const res = await gmail.users.messages.list({
+      userId: 'me',
+      q,
+      maxResults: 100,
+      pageToken,
+      fields: 'messages(id),nextPageToken',
+    });
+    for (const m of res.data.messages ?? []) if (m.id) ids.push(m.id);
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken && ids.length < cap);
+
+  const known = await prisma.email.findMany({
+    where: { message_id: { in: ids } },
+    select: { message_id: true },
+  });
+  const knownIds = new Set(known.map(e => e.message_id));
+  return ids.filter(id => !knownIds.has(id)).slice(0, cap);
+}
+
 export async function getTrackedEmailsFromGmail(labels: string[]) {
   const gmail = getGmailClient();
   if (!gmail) {

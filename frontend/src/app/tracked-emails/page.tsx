@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { BatchProcessPanel } from "@/components/BatchProcessPanel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getApiBaseUrl, getBackendBaseUrl } from "@/lib/utils";
 
@@ -52,6 +53,10 @@ export default function TrackedEmailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // While a batch runs, single-row Process is disabled so the same email
+  // cannot be processed twice at once.
+  const [batchRunning, setBatchRunning] = useState(false);
   const [processingStartedAt, setProcessingStartedAt] = useState<Record<string, number>>({});
   const [progressTick, setProgressTick] = useState(0);
 
@@ -66,15 +71,6 @@ export default function TrackedEmailsPage() {
       const apiBase = getApiBaseUrl();
       const url = `${apiBase}/emails/process/${messageId}`;
       const requestId = crypto.randomUUID();
-      if (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
-        console.info(
-          "[tracked-emails] page host is",
-          window.location.host,
-          "→ API base is",
-          apiBase,
-          "(set NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:4000 if requests never reach the backend)"
-        );
-      }
       console.info("[tracked-emails] POST start", { requestId, url, backend: getBackendBaseUrl() });
 
       const controller = new AbortController();
@@ -229,12 +225,32 @@ export default function TrackedEmailsPage() {
         <CardHeader>
           <CardTitle className="text-zinc-100">Live Gmail Feed</CardTitle>
           <CardDescription className="text-zinc-400">Emails matching the tracked labels specified in your Settings.</CardDescription>
+          <div className="pt-3">
+            <BatchProcessPanel
+              selectedIds={[...selected]}
+              subjectFor={(id) => emails.find((e) => e.id === id)?.subject}
+              onRunningChange={setBatchRunning}
+              onFinished={() => {
+                setSelected(new Set());
+                void loadTrackedEmails();
+              }}
+            />
+          </div>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border border-zinc-800">
             <Table>
               <TableHeader>
                 <TableRow className="border-zinc-800 hover:bg-transparent">
+                  <TableHead className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all"
+                      checked={emails.length > 0 && selected.size === emails.length}
+                      onChange={(e) => setSelected(e.target.checked ? new Set(emails.map((m) => m.id)) : new Set())}
+                      className="h-4 w-4 accent-emerald-500"
+                    />
+                  </TableHead>
                   <TableHead className="w-[130px] whitespace-nowrap text-zinc-400">Date</TableHead>
                   <TableHead className="hidden w-[20%] text-zinc-400 lg:table-cell">From</TableHead>
                   <TableHead className="w-[38%] text-zinc-400">Subject</TableHead>
@@ -246,11 +262,11 @@ export default function TrackedEmailsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-zinc-500 py-8">Fetching recent Gmail messages...</TableCell>
+                    <TableCell colSpan={7} className="text-center text-zinc-500 py-8">Fetching recent Gmail messages...</TableCell>
                   </TableRow>
                 ) : error ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-zinc-500 py-8">
+                    <TableCell colSpan={7} className="text-center text-zinc-500 py-8">
                       <div className="flex flex-col items-center gap-3">
                         <span>{error}</span>
                         <button
@@ -264,11 +280,27 @@ export default function TrackedEmailsPage() {
                   </TableRow>
                 ) : emails.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-zinc-500 py-8">No emails found matching your tracked labels.</TableCell>
+                    <TableCell colSpan={7} className="text-center text-zinc-500 py-8">No emails found matching your tracked labels.</TableCell>
                   </TableRow>
                 ) : (
                   emails.map((email) => (
                     <TableRow key={email.id} className="border-zinc-800 hover:bg-zinc-800/50 transition-colors">
+                      <TableCell className="w-8">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${email.subject ?? "email"}`}
+                          checked={selected.has(email.id)}
+                          onChange={(e) =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(email.id);
+                              else next.delete(email.id);
+                              return next;
+                            })
+                          }
+                          className="h-4 w-4 accent-emerald-500"
+                        />
+                      </TableCell>
                       <TableCell className="text-zinc-300 font-medium whitespace-nowrap text-sm">
                         {email.date ? format(new Date(email.date), "MMM d, HH:mm") : '-'}
                       </TableCell>
@@ -317,9 +349,11 @@ export default function TrackedEmailsPage() {
                             </p>
                           </div>
                         ) : (
-                          <button 
+                          <button
                             onClick={() => handleProcess(email.id)}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-md disabled:opacity-50 transition-colors"
+                            disabled={batchRunning}
+                            title={batchRunning ? "A batch is running — it will reach this email" : undefined}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-md disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                           >
                             Process
                           </button>
