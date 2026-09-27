@@ -127,6 +127,25 @@ async function heartbeat(ok) {
   }
 }
 
+/**
+ * Seconds since this Mac booted. Used to notice a restart between ticks.
+ *
+ * The machine reboots unpredictably. Without this the watchdog is silent about
+ * it: services come back, every check reads UP, no state changed, no email —
+ * and a reboot that dropped something quietly looks identical to no reboot at
+ * all. Boot time is the one signal that distinguishes them.
+ */
+function bootTimeSeconds() {
+  try {
+    // kern.boottime => "{ sec = 1758960000, usec = 0 } Sat Sep 27 ..."
+    const out = execFileSync('/usr/sbin/sysctl', ['-n', 'kern.boottime'], { encoding: 'utf8' });
+    const m = /sec\s*=\s*(\d+)/.exec(out);
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── state, so we only speak on change
 function readState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return {}; }
@@ -137,7 +156,11 @@ function writeState(s) {
 }
 
 (async () => {
-  const previous = readState();
+  const stored = readState();
+  const previous = stored.checks ?? stored;   // tolerate the pre-boot-tracking format
+  const previousBoot = stored.bootTime ?? null;
+  const bootTime = bootTimeSeconds();
+  const rebooted = previousBoot !== null && bootTime !== null && bootTime !== previousBoot;
   const now = new Date().toISOString();
   const results = {};
   const newlyDown = [];
@@ -178,8 +201,20 @@ function writeState(s) {
     );
   }
 
+  if (rebooted) {
+    const upSince = bootTime ? new Date(bootTime * 1000) : null;
+    await sendAlert(
+      allOk ? 'IPM: Mac Mini restarted — everything came back' : 'IPM: Mac Mini restarted — SOMETHING DID NOT COME BACK',
+      `The Mac Mini rebooted${upSince ? ` at ${upSince.toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' })} IST` : ''}.\n\n` +
+        (allOk
+          ? 'All services restarted on their own — no action needed. This note exists so unexplained restarts are visible rather than silent.\n'
+          : 'Some services did NOT restart. That usually means they are not installed as LaunchDaemons, or one failed at boot.\n') +
+        `\nStatus:\n${summary}\n`
+    );
+  }
+
   await heartbeat(allOk);
-  writeState(results);
+  writeState({ bootTime, checks: results });
 
   console.log(`[${now}] ${allOk ? 'all ok' : 'DEGRADED'}\n${summary}`);
   process.exit(0);
