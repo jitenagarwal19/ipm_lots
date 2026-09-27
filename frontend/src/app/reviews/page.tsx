@@ -85,13 +85,13 @@ export default function ReviewsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-zinc-800 hover:bg-transparent">
-                  <TableHead className="text-zinc-400">Lot</TableHead>
-                  <TableHead className="text-zinc-400">Product</TableHead>
-                  <TableHead className="text-zinc-400">Test</TableHead>
-                  <TableHead className="text-zinc-400">Lab</TableHead>
-                  <TableHead className="text-zinc-400">Source</TableHead>
-                  <TableHead className="text-zinc-400">Molecules</TableHead>
-                  <TableHead className="text-zinc-400">Received</TableHead>
+                  <TableHead className="whitespace-nowrap text-zinc-400">Lot</TableHead>
+                  <TableHead className="w-[22%] text-zinc-400">Product</TableHead>
+                  <TableHead className="hidden w-[20%] text-zinc-400 lg:table-cell">Test</TableHead>
+                  <TableHead className="hidden w-[20%] text-zinc-400 lg:table-cell">Lab</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-zinc-400 xl:table-cell">Source</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-zinc-400 sm:table-cell">Molecules</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-zinc-400 md:table-cell">Received</TableHead>
                   <TableHead className="text-zinc-400 text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -114,11 +114,11 @@ export default function ReviewsPage() {
                       <TableCell className="text-emerald-400 font-mono text-sm">
                         {report.test?.lot?.lot_number || report.lot_number || "-"}
                       </TableCell>
-                      <TableCell className="text-zinc-200 max-w-[200px] truncate" title={productDisplayName(report)}>
+                      <TableCell className="max-w-0 truncate text-zinc-200" title={productDisplayName(report)}>
                         {productDisplayName(report)}
                       </TableCell>
-                      <TableCell className="text-zinc-200">{report.test?.test_type?.name || "Unknown"}</TableCell>
-                      <TableCell className="text-zinc-400">{report.test?.lab?.name || "Unknown"}</TableCell>
+                      <TableCell className="hidden max-w-0 truncate text-zinc-200 lg:table-cell" title={report.test?.test_type?.name ?? undefined}>{report.test?.test_type?.name || "Unknown"}</TableCell>
+                      <TableCell className="hidden max-w-0 truncate text-zinc-400 lg:table-cell" title={report.test?.lab?.name ?? undefined}>{report.test?.lab?.name || "Unknown"}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <Badge variant="outline" className="border-amber-500/30 text-amber-400">
@@ -131,7 +131,7 @@ export default function ReviewsPage() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-zinc-300">{report.moleculeResults?.length || 0}</TableCell>
+                      <TableCell className="hidden whitespace-nowrap text-zinc-300 sm:table-cell">{report.moleculeResults?.length || 0}</TableCell>
                       <TableCell className="text-zinc-400">
                         {formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}
                       </TableCell>

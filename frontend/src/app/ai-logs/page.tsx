@@ -43,9 +43,9 @@ export default function AILogsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-zinc-800 hover:bg-transparent">
-                  <TableHead className="text-zinc-400 w-[150px]">Date</TableHead>
-                  <TableHead className="text-zinc-400 w-[150px]">Message ID</TableHead>
-                  <TableHead className="text-zinc-400">Response Snippet</TableHead>
+                  <TableHead className="w-[150px] whitespace-nowrap text-zinc-400">Date</TableHead>
+                  <TableHead className="hidden w-[24%] text-zinc-400 md:table-cell">Message ID</TableHead>
+                  <TableHead className="w-[40%] text-zinc-400">Response Snippet</TableHead>
                   <TableHead className="text-zinc-400 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -64,8 +64,8 @@ export default function AILogsPage() {
                       <TableCell className="text-zinc-300 font-medium text-sm">
                         {log.createdAt ? format(new Date(log.createdAt), "MMM d, HH:mm:ss") : '-'}
                       </TableCell>
-                      <TableCell className="text-zinc-300 text-sm font-mono truncate" title={log.message_id}>{log.message_id || 'N/A'}</TableCell>
-                      <TableCell className="text-zinc-400 text-xs font-mono truncate max-w-[400px]">
+                      <TableCell className="hidden max-w-0 truncate font-mono text-sm text-zinc-300 md:table-cell" title={log.message_id}>{log.message_id || 'N/A'}</TableCell>
+                      <TableCell className="max-w-0 truncate font-mono text-xs text-zinc-400">
                         {log.response_received}
                       </TableCell>
                       <TableCell className="text-right">

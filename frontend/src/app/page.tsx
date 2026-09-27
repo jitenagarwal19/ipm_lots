@@ -138,12 +138,12 @@ export default function Dashboard() {
             <Table>
               <TableHeader>
                 <TableRow className="border-zinc-800 hover:bg-transparent">
-                  <TableHead className="text-zinc-400">Lot</TableHead>
-                  <TableHead className="text-zinc-400">Test</TableHead>
-                  <TableHead className="text-zinc-400">Lab</TableHead>
-                  <TableHead className="text-zinc-400">Source</TableHead>
-                  <TableHead className="text-zinc-400">Molecules</TableHead>
-                  <TableHead className="text-zinc-400">Received</TableHead>
+                  <TableHead className="whitespace-nowrap text-zinc-400">Lot</TableHead>
+                  <TableHead className="w-[26%] text-zinc-400">Test</TableHead>
+                  <TableHead className="hidden w-[26%] text-zinc-400 lg:table-cell">Lab</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-zinc-400 xl:table-cell">Source</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-zinc-400 sm:table-cell">Molecules</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-zinc-400 md:table-cell">Received</TableHead>
                   <TableHead className="text-right text-zinc-400">Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -197,7 +197,7 @@ export default function Dashboard() {
                           ) : null}
                         </div>
                       </TableCell>
-                      <TableCell className="text-zinc-300">{report.moleculeResults?.length || 0}</TableCell>
+                      <TableCell className="hidden whitespace-nowrap text-zinc-300 sm:table-cell">{report.moleculeResults?.length || 0}</TableCell>
                       <TableCell className="text-zinc-400">
                         {formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}
                       </TableCell>

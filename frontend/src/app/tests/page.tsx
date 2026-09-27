@@ -166,13 +166,13 @@ export default function TestsPage() {
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
                 <TableHead className="text-zinc-400 whitespace-nowrap">Date</TableHead>
-                <TableHead className="text-zinc-400 min-w-[10rem]">Test lot information</TableHead>
-                <TableHead className="text-zinc-400 min-w-0 max-w-[18rem] w-[18rem]">Result</TableHead>
-                <TableHead className="text-zinc-400">Lot number</TableHead>
-                <TableHead className="text-zinc-400">Test type</TableHead>
-                <TableHead className="text-zinc-400">Lab</TableHead>
-                <TableHead className="text-zinc-400">Status</TableHead>
-                <TableHead className="text-zinc-400">Compliance</TableHead>
+                <TableHead className="hidden w-[20%] text-zinc-400 lg:table-cell">Test lot information</TableHead>
+                <TableHead className="w-[26%] text-zinc-400">Result</TableHead>
+                <TableHead className="whitespace-nowrap text-zinc-400">Lot number</TableHead>
+                <TableHead className="hidden w-[18%] text-zinc-400 xl:table-cell">Test type</TableHead>
+                <TableHead className="hidden w-[18%] text-zinc-400 xl:table-cell">Lab</TableHead>
+                <TableHead className="whitespace-nowrap text-zinc-400">Status</TableHead>
+                <TableHead className="hidden whitespace-nowrap text-zinc-400 md:table-cell">Compliance</TableHead>
                 <TableHead className="text-zinc-400">Review</TableHead>
               </TableRow>
             </TableHeader>
@@ -196,14 +196,14 @@ export default function TestsPage() {
                     <TableCell className="whitespace-nowrap text-zinc-400 align-top">
                       {new Date(test.createdAt).toLocaleDateString()}
                     </TableCell>
-                    <TableCell className="text-zinc-300 text-sm align-top">
-                      <div className="space-y-0.5 max-w-xs">
+                    <TableCell className="hidden align-top text-sm text-zinc-300 lg:table-cell">
+                      <div className="max-w-xs space-y-0.5">
                         <div><span className="text-zinc-500">Product</span> {info.product}</div>
                         <div><span className="text-zinc-500">Vendor</span> {info.vendor}</div>
                         <div><span className="text-zinc-500">Sampled by</span> {info.sampled}</div>
                       </div>
                     </TableCell>
-                    <TableCell className="align-top min-w-0 max-w-[18rem] w-[18rem]">
+                    <TableCell className="max-w-0 align-top">
                       <span
                         title={summary.text !== "—" ? summary.text : undefined}
                         className={
@@ -223,12 +223,12 @@ export default function TestsPage() {
                         {test.lot?.lot_number || "Unknown"}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-zinc-200 align-top">
+                    <TableCell className="hidden max-w-0 truncate align-top text-zinc-200 xl:table-cell">
                       <Link href={`/tests/${test.id}`} className="hover:text-emerald-400 hover:underline">
                         {test.test_type?.name || "Unknown"}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-zinc-400 align-top">{test.lab?.name || "Unknown"}</TableCell>
+                    <TableCell className="hidden max-w-0 truncate align-top text-zinc-400 xl:table-cell" title={test.lab?.name ?? undefined}>{test.lab?.name || "Unknown"}</TableCell>
                     <TableCell className="align-top">
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(test.status)}`}>
                         {test.status}

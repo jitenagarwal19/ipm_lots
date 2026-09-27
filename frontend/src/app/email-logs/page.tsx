@@ -69,12 +69,12 @@ export default function EmailLogsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-zinc-800 hover:bg-transparent">
-                  <TableHead className="text-zinc-400">Date</TableHead>
-                  <TableHead className="text-zinc-400">Direction</TableHead>
-                  <TableHead className="text-zinc-400">Subject</TableHead>
-                  <TableHead className="text-zinc-400">From</TableHead>
-                  <TableHead className="text-zinc-400">To</TableHead>
-                  <TableHead className="text-zinc-400">Related Lot</TableHead>
+                  <TableHead className="whitespace-nowrap text-zinc-400">Date</TableHead>
+                  <TableHead className="hidden whitespace-nowrap text-zinc-400 sm:table-cell">Direction</TableHead>
+                  <TableHead className="w-[34%] text-zinc-400">Subject</TableHead>
+                  <TableHead className="hidden w-[22%] text-zinc-400 md:table-cell">From</TableHead>
+                  <TableHead className="hidden w-[22%] text-zinc-400 lg:table-cell">To</TableHead>
+                  <TableHead className="whitespace-nowrap text-zinc-400">Related Lot</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -97,9 +97,9 @@ export default function EmailLogsPage() {
                           {email.direction}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-zinc-200">{email.subject || '-'}</TableCell>
-                      <TableCell className="text-zinc-400">{email.from_email}</TableCell>
-                      <TableCell className="text-zinc-400">{email.to_email || '-'}</TableCell>
+                      <TableCell className="max-w-0 truncate text-zinc-200" title={email.subject || undefined}>{email.subject || '-'}</TableCell>
+                      <TableCell className="hidden max-w-0 truncate text-zinc-400 md:table-cell" title={email.from_email}>{email.from_email}</TableCell>
+                      <TableCell className="hidden max-w-0 truncate text-zinc-400 lg:table-cell" title={email.to_email || undefined}>{email.to_email || '-'}</TableCell>
                       <TableCell className="text-zinc-400">
                         {email.test?.lot?.lot_number ? (
                           <span className="font-mono bg-zinc-800 px-2 py-1 rounded text-xs">{email.test.lot.lot_number}</span>

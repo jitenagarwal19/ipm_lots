@@ -185,10 +185,10 @@ export default function LotViewClient() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-zinc-800 hover:bg-transparent">
-                    <TableHead className="text-zinc-400">Type</TableHead>
-                    <TableHead className="text-zinc-400">Lab</TableHead>
-                    <TableHead className="text-zinc-400">Standard</TableHead>
-                    <TableHead className="text-zinc-400">Status</TableHead>
+                    <TableHead className="w-[26%] text-zinc-400">Type</TableHead>
+                    <TableHead className="hidden w-[26%] text-zinc-400 md:table-cell">Lab</TableHead>
+                    <TableHead className="hidden whitespace-nowrap text-zinc-400 sm:table-cell">Standard</TableHead>
+                    <TableHead className="whitespace-nowrap text-zinc-400">Status</TableHead>
                     <TableHead className="text-zinc-400">Reports</TableHead>
                   </TableRow>
                 </TableHeader>

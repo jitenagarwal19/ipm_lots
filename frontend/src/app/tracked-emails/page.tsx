@@ -235,11 +235,11 @@ export default function TrackedEmailsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-zinc-800 hover:bg-transparent">
-                  <TableHead className="text-zinc-400 w-[150px]">Date</TableHead>
-                  <TableHead className="text-zinc-400 w-[200px]">From</TableHead>
-                  <TableHead className="text-zinc-400">Subject</TableHead>
-                  <TableHead className="text-zinc-400">Snippet</TableHead>
-                  <TableHead className="text-zinc-400 w-[150px]">Attachments</TableHead>
+                  <TableHead className="w-[130px] whitespace-nowrap text-zinc-400">Date</TableHead>
+                  <TableHead className="hidden w-[20%] text-zinc-400 lg:table-cell">From</TableHead>
+                  <TableHead className="w-[38%] text-zinc-400">Subject</TableHead>
+                  <TableHead className="hidden w-[22%] text-zinc-400 xl:table-cell">Snippet</TableHead>
+                  <TableHead className="hidden w-[150px] text-zinc-400 md:table-cell">Attachments</TableHead>
                   <TableHead className="text-zinc-400 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
