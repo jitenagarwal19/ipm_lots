@@ -78,12 +78,22 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   )
 }
 
+/**
+ * Cells wrap by default.
+ *
+ * The shadcn default is `whitespace-nowrap`, which forbids every cell in every
+ * table from ever breaking a line. That single class was the cause of the
+ * app-wide horizontal scrolling: a 590px email subject or a lab name forced its
+ * column to full width, and the table overflowed however it was styled. Cells
+ * that genuinely must stay on one line — dates, lot numbers, badges — say so
+ * explicitly with `whitespace-nowrap`.
+ */
 function TableCell({ className, ...props }: React.ComponentProps<"td">) {
   return (
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "p-2 align-middle [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}

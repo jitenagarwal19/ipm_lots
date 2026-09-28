@@ -48,6 +48,13 @@ type TestRow = {
   }[];
 };
 
+/** "COMPLIANCE_PENDING" -> "Compliance pending". A raw enum reads like an error and cannot wrap. */
+function statusLabel(status: string | null | undefined): string {
+  if (!status) return "-";
+  const words = status.toLowerCase().split("_");
+  return words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
 export default function TestsPage() {
   const [tests, setTests] = useState<TestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,28 +169,35 @@ export default function TestsPage() {
           <CardDescription className="text-zinc-400">View and track the status of all tests.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
+          {/*
+            Six columns, not nine. Nine could not fit a laptop screen at any setting:
+            badges and links refuse to shrink, so every column that could truncate
+            collapsed to nothing ("E…", "Pestici…") while the badges kept full width.
+            Related fields now stack in one cell, the way lot information already did.
+
+            table-fixed makes the table exactly as wide as its container — widths are
+            allocated rather than negotiated from content, so no single long value can
+            push the rest off screen.
+          */}
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="text-zinc-400 whitespace-nowrap">Date</TableHead>
-                <TableHead className="hidden w-[20%] text-zinc-400 lg:table-cell">Test lot information</TableHead>
-                <TableHead className="w-[40%] text-zinc-400">Result</TableHead>
-                <TableHead className="whitespace-nowrap text-zinc-400">Lot number</TableHead>
-                <TableHead className="hidden w-[18%] text-zinc-400 xl:table-cell">Test type</TableHead>
-                <TableHead className="hidden w-[18%] text-zinc-400 xl:table-cell">Lab</TableHead>
-                <TableHead className="whitespace-nowrap text-zinc-400">Status</TableHead>
-                <TableHead className="hidden whitespace-nowrap text-zinc-400 xl:table-cell">Compliance</TableHead>
-                <TableHead className="text-zinc-400">Review</TableHead>
+                <TableHead className="w-[92px] text-zinc-400">Date</TableHead>
+                <TableHead className="w-[24%] text-zinc-400">Lot</TableHead>
+                <TableHead className="hidden w-[22%] text-zinc-400 md:table-cell">Test</TableHead>
+                <TableHead className="text-zinc-400">Result</TableHead>
+                <TableHead className="w-[17%] text-zinc-400">Status</TableHead>
+                <TableHead className="w-[112px] text-right text-zinc-400">Review</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-zinc-500 py-8">Loading tests...</TableCell>
+                  <TableCell colSpan={6} className="py-8 text-center text-zinc-500">Loading tests...</TableCell>
                 </TableRow>
               ) : tests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-zinc-500 py-8">No tests initiated yet.</TableCell>
+                  <TableCell colSpan={6} className="py-8 text-center text-zinc-500">No tests initiated yet.</TableCell>
                 </TableRow>
               ) : (
                 tests.map((test) => {
@@ -192,22 +206,47 @@ export default function TestsPage() {
                   const pending = pendingReviewReport(test);
                   const compliance = complianceSummary(test);
                   return (
-                  <TableRow key={test.id} className="border-zinc-800 hover:bg-zinc-800/50 transition-colors">
-                    <TableCell className="whitespace-nowrap text-zinc-400 align-top">
+                  <TableRow key={test.id} className="border-zinc-800 transition-colors hover:bg-zinc-800/50">
+                    <TableCell className="whitespace-nowrap align-top text-zinc-400">
                       {new Date(test.createdAt).toLocaleDateString()}
                     </TableCell>
-                    <TableCell className="hidden align-top text-sm text-zinc-300 lg:table-cell">
-                      <div className="max-w-xs space-y-0.5">
-                        <div><span className="text-zinc-500">Product</span> {info.product}</div>
-                        <div><span className="text-zinc-500">Vendor</span> {info.vendor}</div>
-                        <div><span className="text-zinc-500">Sampled by</span> {info.sampled}</div>
+
+                    {/* Lot: the identifier first, then what it is */}
+                    <TableCell className="align-top">
+                      <Link
+                        href={`/lots/${test.lot_id}`}
+                        className="block truncate font-medium text-emerald-400 hover:underline"
+                        title={test.lot?.lot_number || undefined}
+                      >
+                        {test.lot?.lot_number || "Unknown"}
+                      </Link>
+                      <div className="truncate text-sm text-zinc-300" title={info.product}>{info.product}</div>
+                      <div className="truncate text-xs text-zinc-500" title={`${info.vendor} · ${info.sampled}`}>
+                        {info.vendor} · {info.sampled}
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-0 align-top">
+
+                    {/* Test: what was run, and where */}
+                    <TableCell className="hidden align-top md:table-cell">
+                      <Link
+                        href={`/tests/${test.id}`}
+                        className="block truncate text-zinc-200 hover:text-emerald-400 hover:underline"
+                        title={test.test_type?.name ?? undefined}
+                      >
+                        {test.test_type?.name || "Unknown"}
+                      </Link>
+                      <div className="truncate text-xs text-zinc-500" title={test.lab?.name ?? undefined}>
+                        {test.lab?.name || "Unknown"}
+                      </div>
+                    </TableCell>
+
+                    {/* Result takes the remaining width, and two lines rather than one —
+                        the molecule list is what people come to this page to read. */}
+                    <TableCell className="align-top">
                       <span
                         title={summary.text !== "—" ? summary.text : undefined}
                         className={
-                          "block w-full min-w-0 truncate text-sm cursor-help " +
+                          "line-clamp-2 break-words text-sm " +
                           (summary.tone === "ok"
                             ? "text-emerald-400/90"
                             : summary.tone === "warn"
@@ -218,40 +257,33 @@ export default function TestsPage() {
                         {summary.text}
                       </span>
                     </TableCell>
-                    <TableCell className="font-medium text-emerald-400 cursor-pointer hover:underline align-top">
-                      <Link href={`/lots/${test.lot_id}`}>
-                        {test.lot?.lot_number || "Unknown"}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="hidden max-w-0 truncate align-top text-zinc-200 xl:table-cell">
-                      <Link href={`/tests/${test.id}`} className="hover:text-emerald-400 hover:underline">
-                        {test.test_type?.name || "Unknown"}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="hidden max-w-0 truncate align-top text-zinc-400 xl:table-cell" title={test.lab?.name ?? undefined}>{test.lab?.name || "Unknown"}</TableCell>
-                    <TableCell className="whitespace-nowrap align-top">
-                      <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${getStatusStyle(test.status)}`}>
-                        {test.status}
+
+                    {/* Status, with the per-market verdicts beneath it */}
+                    <TableCell className="align-top">
+                      <span
+                        className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-xs font-medium ${getStatusStyle(test.status)}`}
+                        title={test.status}
+                      >
+                        <span className="truncate">{statusLabel(test.status)}</span>
                       </span>
-                    </TableCell>
-                    <TableCell className="hidden align-top text-zinc-300 xl:table-cell">
-                      {compliance.length > 0 ? (
-                        <div className="flex max-w-[14rem] flex-wrap gap-1">
+                      {compliance.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
                           {compliance.map((check) => (
-                            <span key={check.id} className="inline-flex rounded-full border border-emerald-500/30 px-2 py-0.5 text-[10px] text-emerald-400">
-                              {check.label}: {check.status}
+                            <span
+                              key={check.id}
+                              title={`${check.label}: ${check.status}`}
+                              className="inline-flex max-w-full rounded-full border border-emerald-500/30 px-1.5 py-0.5 text-[10px] text-emerald-400"
+                            >
+                              <span className="truncate">{check.label}: {check.status}</span>
                             </span>
                           ))}
                         </div>
-                      ) : test.status === "COMPLIANCE_PENDING" ? (
-                        <span className="text-amber-400 text-sm">Pending</span>
-                      ) : (
-                        <span className="text-zinc-600">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap align-top text-right text-zinc-300">
+
+                    <TableCell className="align-top text-right">
                       {pending ? (
-                        <Link href={`/reviews/${pending.id}`} className="text-amber-400 hover:underline text-sm">
+                        <Link href={`/reviews/${pending.id}`} className="text-sm text-amber-400 hover:underline">
                           {pending.status === "COMPLIANCE_PENDING" ? "Check compliance" : "Review report"}
                         </Link>
                       ) : (
